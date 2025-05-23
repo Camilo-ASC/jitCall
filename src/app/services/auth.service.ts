@@ -18,8 +18,10 @@ export class AuthService {
   }
 
   login(email: string, password: string): Promise<any> {
-    return this.afAuth.signInWithEmailAndPassword(email, password);
-  }
+    return this.afAuth.signInWithEmailAndPassword(email, password).then(() => {
+    this.router.navigate(['/home']); // o la ruta que uses
+  });
+}
 
   logout(): Promise<void> {
     return this.afAuth.signOut().then(() => {
