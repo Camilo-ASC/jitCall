@@ -4,6 +4,7 @@ import { AuthService } from 'src/app/services/auth.service';
 import { UserService } from 'src/app/services/user.service';
 import { PushNotifications } from '@capacitor/push-notifications';
 import { ToastController } from '@ionic/angular';
+import { Router } from '@angular/router';
 
 @Component({
   selector: 'app-register',
@@ -18,7 +19,8 @@ export class RegisterPage {
     private fb: FormBuilder,
     private authService: AuthService,
     private userService: UserService,
-    private toastController: ToastController
+    private toastController: ToastController,
+    private router: Router
   ) {
     this.registerForm = this.fb.group({
       name: ['', Validators.required],
@@ -29,55 +31,62 @@ export class RegisterPage {
     });
   }
 
+  goToLogin() {
+  this.router.navigate(['/auth/login']);
+  }
+
   async register() {
-  if (this.registerForm.invalid) return;
+    if (this.registerForm.invalid) return;
 
-  this.loading = true; // Activar loading
+    this.loading = true;
 
-  const { name, lastname, phone, email, password } = this.registerForm.value;
+    const { name, lastname, phone, email, password } = this.registerForm.value;
 
-  try {
-    // Registrar usuario en Firebase Auth
-    const userCredential = await this.authService.register(email, password);
-    const uid = userCredential.user.uid;
+    try {
+      // Crear usuario en Firebase Auth
+      const userCredential = await this.authService.register(
+        { name: name, lastname: lastname, phone: phone, email },
+        password
+      );
+      const uid = userCredential.user.uid;
 
-    // Solicitar permisos y registrar notificaciones push
-    const permission = await PushNotifications.requestPermissions();
-    let fcmToken = '';
+      // Solicitar permisos y obtener token FCM
+      const permission = await PushNotifications.requestPermissions();
+      let fcmToken = '';
 
-    if (permission.receive === 'granted') {
-      await PushNotifications.register();
+      if (permission.receive === 'granted') {
+        await PushNotifications.register();
 
-      const tokenPromise = new Promise<string>((resolve, reject) => {
-        PushNotifications.addListener('registration', (token) => {
-          resolve(token.value);
+        const tokenPromise = new Promise<string>((resolve, reject) => {
+          PushNotifications.addListener('registration', (token) => {
+            resolve(token.value);
+          });
+
+          PushNotifications.addListener('registrationError', (err) => {
+            reject(err);
+          });
         });
 
-        PushNotifications.addListener('registrationError', (err) => {
-          reject(err);
-        });
+        fcmToken = await tokenPromise;
+      }
+
+      // Guardar usuario en Firestore
+      await this.userService.createUser(uid, {
+        nombre: name,
+        apellido: lastname,
+        telefono: phone,
+        email,
+        token: fcmToken
       });
 
-      fcmToken = await tokenPromise;
+      this.showToast('Usuario registrado con éxito');
+    } catch (err) {
+      console.error(err);
+      this.showToast('Error al registrar usuario');
+    } finally {
+      this.loading = false;
     }
-
-    // Guardar usuario en Firestore
-    await this.userService.createUser(uid, {
-      name,
-      lastname,
-      phone,
-      email,
-      token: fcmToken
-    });
-
-    this.showToast('Usuario registrado con éxito');
-  } catch (err) {
-    console.error(err);
-    this.showToast('Error al registrar usuario');
-  } finally {
-    this.loading = false; // Desactivar loading
   }
-}
 
   async showToast(message: string) {
     const toast = await this.toastController.create({
