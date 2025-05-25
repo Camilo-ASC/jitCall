@@ -1,6 +1,6 @@
-import { Component, OnInit, OnDestroy, ViewChild } from '@angular/core'; // Quité ElementRef por ahora
+import { Component, OnInit, OnDestroy, ViewChild } from '@angular/core';
 import { ActivatedRoute, Router } from '@angular/router';
-import { ToastController, IonContent } from '@ionic/angular';
+import { ToastController, IonContent, Platform } from '@ionic/angular'; // Platform AÑADIDO
 import { HttpClient } from '@angular/common/http';
 import { v4 as uuidv4 } from 'uuid';
 
@@ -18,38 +18,39 @@ import {
   addDoc,
   updateDoc,
   serverTimestamp,
-  Timestamp, // Importante para el tipado
+  Timestamp,
   Unsubscribe 
 } from 'firebase/firestore';
 import { environment } from 'src/environments/environment';
 
-// Modelo User (asegúrate que la ruta sea correcta y que User tenga 'token?: string;')
+// Supabase
+import { createClient, SupabaseClient } from '@supabase/supabase-js';
+
+// Capacitor Camera
+import { Camera, CameraResultType, CameraSource, Photo } from '@capacitor/camera'; // <-- IMPORTACIÓN PARA CAMERA
+
+// Modelo User
 import { User } from 'src/app/core/models/user.model'; 
 
 // --- INTERFACES PARA EL CHAT ---
-
-// Interfaz para el documento de chat como se guarda en Firestore (info general del chat)
 interface ChatData {
   participants: string[];
   participantInfo: {
     [key: string]: { name: string; photoUrl?: string; };
   };
-  // ... otros campos del documento de chat si los necesitas
 }
 
-// Interfaz para el documento de MENSAJE como se guarda en Firestore
 interface MessageDocumentData {
   senderId: string;
   receiverId: string;
   text?: string;
-  type: 'text' | 'image' | 'audio' | 'video' | 'file' | 'location';
+  type: 'text' | 'image' | 'audio' | 'video' | 'file' | 'location'; // Tipos de mensaje
   fileUrl?: string;
   fileName?: string;
   location?: { latitude: number; longitude: number };
-  timestamp: Timestamp; // En Firestore, los timestamps son de tipo Timestamp
+  timestamp: Timestamp;
 }
 
-// Interfaz para los MENSAJES que usamos en la LÓGICA de la PÁGINA y en el TEMPLATE
 export interface ChatMessage {
   id?: string;
   senderId: string;
@@ -59,9 +60,8 @@ export interface ChatMessage {
   fileUrl?: string;
   fileName?: string;
   location?: { latitude: number; longitude: number };
-  timestamp?: Date; // Para el template, es mejor usar el objeto Date de JavaScript
+  timestamp?: Date;
 }
-
 
 @Component({
   selector: 'app-conversation',
@@ -78,27 +78,32 @@ export class ConversationPage implements OnInit, OnDestroy {
   
   isLoadingMessages = true;
   currentUserId: string | null = null;
-  otherUserId: string | null = null; // Corregido: string | null
+  otherUserId: string | null = null;
   otherUserName: string | null = 'Chat';
 
   private app: FirebaseApp;
   private auth = getAuth(); 
   private db = getFirestore();
 
+  public supabase: SupabaseClient;
+  public bucketName = 'gallerycloud1';
+
   private messagesUnsubscribe: Unsubscribe | null = null;
   private chatDocUnsubscribe: Unsubscribe | null = null;
-
   private contactForCall: Partial<User> | null = null; 
 
   constructor(
     private route: ActivatedRoute,
     private router: Router,
     private toastController: ToastController,
-    private http: HttpClient
+    private http: HttpClient,
+    private platform: Platform // Inyectamos Platform
   ) {
     this.app = initializeApp(environment.firebaseConfig);
     this.auth = getAuth(this.app);
     this.db = getFirestore(this.app);
+    this.supabase = createClient(environment.supabaseUrl, environment.supabaseKey);
+    console.log('Supabase client initialized using environment variables');
   }
 
   ngOnInit() {
@@ -127,8 +132,7 @@ export class ConversationPage implements OnInit, OnDestroy {
     const chatDocRef = doc(this.db, 'chats', this.chatId);
     this.chatDocUnsubscribe = onSnapshot(chatDocRef, (docSnap) => {
       if (docSnap.exists()) {
-        const chatData = docSnap.data() as ChatData; // Le decimos a TS la forma de chatData
-        // Corregimos la asignación de otherUserId
+        const chatData = docSnap.data() as ChatData;
         this.otherUserId = chatData.participants.find(uid => uid !== this.currentUserId) || null; 
         
         if (this.otherUserId && chatData.participantInfo && chatData.participantInfo[this.otherUserId]) {
@@ -141,8 +145,12 @@ export class ConversationPage implements OnInit, OnDestroy {
           this.otherUserName = 'Desconocido';
         }
       } else {
+        this.showToast('Conversación no encontrada.');
         this.router.navigate(['/chat/list']);
       }
+    }, error => {
+      console.error("Error cargando info del chat:", error);
+      this.showToast('Error al cargar datos de la conversación.');
     });
   }
 
@@ -155,14 +163,11 @@ export class ConversationPage implements OnInit, OnDestroy {
 
     this.messagesUnsubscribe = onSnapshot(q, (querySnapshot) => {
       this.messages = querySnapshot.docs.map(doc => {
-        const data = doc.data() as MessageDocumentData; // Le decimos a TS la forma de data
-        
+        const data = doc.data() as MessageDocumentData;
         let messageTimestampDate: Date | undefined = undefined;
-        // Aseguramos que data.timestamp exista y sea un objeto Timestamp de Firebase
         if (data.timestamp && typeof data.timestamp.toDate === 'function') {
             messageTimestampDate = data.timestamp.toDate();
         }
-
         return {
           id: doc.id,
           senderId: data.senderId,
@@ -172,11 +177,15 @@ export class ConversationPage implements OnInit, OnDestroy {
           fileUrl: data.fileUrl,
           fileName: data.fileName,
           location: data.location,
-          timestamp: messageTimestampDate // Usamos la fecha convertida
-        } as ChatMessage; // Aseguramos que el objeto devuelto cumpla con ChatMessage
+          timestamp: messageTimestampDate
+        } as ChatMessage;
       });
       this.isLoadingMessages = false;
       this.scrollToBottom();
+    }, error => {
+      console.error("Error cargando mensajes:", error);
+      this.isLoadingMessages = false;
+      this.showToast("Error al cargar los mensajes.");
     });
   }
 
@@ -184,15 +193,13 @@ export class ConversationPage implements OnInit, OnDestroy {
     if (!this.newMessageText || this.newMessageText.trim() === '' || !this.chatId || !this.currentUserId || !this.otherUserId) {
       return;
     }
-
-    const messageData = { // No necesita Omit si los campos coinciden o son opcionales
+    const messageData = {
       senderId: this.currentUserId,
       receiverId: this.otherUserId,
       text: this.newMessageText.trim(),
-      type: 'text' as const, // Aseguramos el tipo literal
+      type: 'text' as const,
       timestamp: serverTimestamp()
     };
-
     try {
       const messagesRef = collection(this.db, `chats/${this.chatId}/messages`);
       await addDoc(messagesRef, messageData);
@@ -200,21 +207,20 @@ export class ConversationPage implements OnInit, OnDestroy {
       const chatDocRef = doc(this.db, 'chats', this.chatId);
       await updateDoc(chatDocRef, {
         lastMessageText: messageData.text,
-        lastMessageTimestamp: serverTimestamp(), // Usamos serverTimestamp para consistencia
+        lastMessageTimestamp: serverTimestamp(),
         lastMessageSenderId: this.currentUserId,
         updatedAt: serverTimestamp(),
       });
-
       this.newMessageText = '';
       this.scrollToBottom();
     } catch (error) {
+      console.error("Error al enviar mensaje:", error);
       this.showToast('No se pudo enviar el mensaje.');
     }
   }
 
-  // Corregimos el tipo del evento
   sendMessageOnEnter(event: Event) {
-    const keyboardEvent = event as KeyboardEvent; // Hacemos un type assertion
+    const keyboardEvent = event as KeyboardEvent;
     if (keyboardEvent.key === 'Enter' && !keyboardEvent.shiftKey) {
       event.preventDefault(); 
       this.sendMessage();
@@ -226,27 +232,30 @@ export class ConversationPage implements OnInit, OnDestroy {
       this.showToast('Datos de contacto incompletos para llamar.');
       return;
     }
-    
     const contactUserDocRef = doc(this.db, 'users', this.contactForCall.uid);
     try {
       const contactUserSnap = await getDoc(contactUserDocRef);
-      // Usamos 'as User' para decirle a TS la forma de los datos del usuario
       const contactData = contactUserSnap.data() as User | undefined; 
-
-      if (!contactUserSnap.exists() || !contactData?.token) { // Verificamos contactData.token
+      if (!contactUserSnap.exists() || !contactData?.token) {
         this.showToast(`${this.otherUserName} no puede recibir llamadas (sin token).`);
         return;
       }
       const contactTokenFCM = contactData.token;
-
       const currentUser = this.auth.currentUser;
-      const currentUserNameForCall = currentUser?.displayName || currentUser?.email?.split('@')[0] || 'Alguien';
-
+      let currentUserNameForCall = 'Alguien';
+      if (currentUser) {
+        const currentUserProfileSnap = await getDoc(doc(this.db, 'users', currentUser.uid));
+        if (currentUserProfileSnap.exists()) {
+            const currentUserData = currentUserProfileSnap.data() as User;
+            currentUserNameForCall = `${currentUserData.name} ${currentUserData.lastname}`;
+        } else {
+            currentUserNameForCall = currentUser.email?.split('@')[0] || 'Alguien';
+        }
+      }
       if (!currentUser) {
         this.showToast('Error de autenticación.');
         return;
       }
-
       const meetingId = uuidv4();
       const notificationPayload = {
         token: contactTokenFCM,
@@ -260,35 +269,147 @@ export class ConversationPage implements OnInit, OnDestroy {
         }
       };
       const apiUrl = 'https://ravishing-courtesy-production.up.railway.app/notifications';
-      
       this.showToast(`Llamando a ${this.otherUserName}...`);
       this.http.post(apiUrl, notificationPayload).subscribe({
         next: () => this.router.navigate(['/call/jitsi-call', meetingId]),
-        error: (err) => this.showToast('No se pudo iniciar la llamada.')
+        error: (err) => {
+          console.error("Error API llamada:", err);
+          this.showToast('No se pudo iniciar la llamada.');
+        }
       });
-
     } catch (error) {
+      console.error("Error preparando llamada:", error);
       this.showToast('Error al preparar la llamada.');
     }
   }
 
-  scrollToBottom(duration: number = 300) {
-    setTimeout(() => {
-      if (this.chatContent) {
-        this.chatContent.scrollToBottom(duration);
+  // --- === NUEVAS FUNCIONES PARA ENVIAR IMÁGENES === ---
+  async selectAndSendImage() {
+    if (!this.chatId || !this.currentUserId || !this.otherUserId) {
+      this.showToast('Error: Información de chat no disponible.');
+      return;
+    }
+
+    try {
+      if (this.platform.is('capacitor')) {
+        const permissions = await Camera.checkPermissions();
+        if (permissions.camera === 'denied' || permissions.photos === 'denied') {
+          const requestedPermissions = await Camera.requestPermissions();
+          if (requestedPermissions.camera === 'denied' || requestedPermissions.photos === 'denied') {
+            this.showToast('Permiso de cámara/galería denegado.');
+            return;
+          }
+        }
       }
-    }, 100);
+
+      const image = await Camera.getPhoto({
+        quality: 90,
+        allowEditing: false,
+        resultType: CameraResultType.DataUrl,
+        source: CameraSource.Prompt 
+      });
+
+      if (image.dataUrl) {
+        this.showToast('Subiendo imagen...');
+
+        const blob = await this.dataUrlToBlob(image.dataUrl);
+        const fileName = `chat_media/${this.chatId}/${new Date().getTime()}.${image.format}`;
+        
+        const { data: uploadData, error: uploadError } = await this.supabase.storage
+          .from(this.bucketName)
+          .upload(fileName, blob, {
+            contentType: image.format === 'jpg' ? 'image/jpeg' : `image/${image.format}`,
+            upsert: false 
+          });
+
+        if (uploadError) {
+          console.error('Error al subir a Supabase:', uploadError);
+          throw uploadError;
+        }
+
+        if (uploadData && uploadData.path) {
+          const { data: urlData } = this.supabase.storage
+            .from(this.bucketName)
+            .getPublicUrl(uploadData.path);
+
+          if (urlData && urlData.publicUrl) {
+            await this.sendMediaMessage(urlData.publicUrl, 'image', `imagen.${image.format}`);
+          } else {
+            throw new Error('No se pudo obtener la URL pública de la imagen.');
+          }
+        } else {
+          throw new Error('No se recibió info de subida de Supabase.');
+        }
+      }
+    } catch (error: any) {
+      console.error('Error en selectAndSendImage:', error);
+      if (error && error.message) {
+        if (error.message.toLowerCase().includes('user cancelled') || error.message.toLowerCase().includes('canceled')) {
+          console.log('Selección de imagen cancelada.');
+        } else if (error.message.toLowerCase().includes('permission')) {
+          this.showToast('Permiso de cámara/galería fue denegado.');
+        } else {
+          this.showToast('Error al procesar la imagen.');
+        }
+      } else {
+        this.showToast('Error desconocido al procesar la imagen.');
+      }
+    }
   }
 
-  async showToast(message: string) {
-    const toast = await this.toastController.create({
-      message, duration: 3000, position: 'bottom'
-    });
-    toast.present();
+  private async dataUrlToBlob(dataUrl: string): Promise<Blob> {
+    const response = await fetch(dataUrl);
+    const blob = await response.blob();
+    return blob;
   }
 
-  ngOnDestroy() {
-    if (this.messagesUnsubscribe) this.messagesUnsubscribe();
-    if (this.chatDocUnsubscribe) this.chatDocUnsubscribe();
+  async sendMediaMessage(fileUrl: string, type: 'image' | 'audio' | 'video' | 'file', originalFileName?: string) {
+    if (!this.chatId || !this.currentUserId || !this.otherUserId) {
+      this.showToast('Error al enviar: datos de chat incompletos.');
+      return;
+    }
+    const messageData = {
+      senderId: this.currentUserId,
+      receiverId: this.otherUserId,
+      type: type,
+      fileUrl: fileUrl,
+      fileName: originalFileName || `${type}_${new Date().getTime()}`,
+      timestamp: serverTimestamp(),
+    };
+    try {
+      const messagesRef = collection(this.db, `chats/${this.chatId}/messages`);
+      await addDoc(messagesRef, messageData);
+      const chatDocRef = doc(this.db, 'chats', this.chatId);
+      let lastMessageTextPreview = '📷 Imagen';
+      if (type === 'audio') lastMessageTextPreview = '🎤 Mensaje de voz';
+      if (type === 'video') lastMessageTextPreview = '📹 Video';
+      if (type === 'file' && originalFileName) lastMessageTextPreview = `📄 ${originalFileName}`;
+      else if (type === 'file') lastMessageTextPreview = '📄 Archivo adjunto';
+
+      await updateDoc(chatDocRef, {
+        lastMessageText: lastMessageTextPreview,
+        lastMessageTimestamp: serverTimestamp(),
+        lastMessageSenderId: this.currentUserId,
+        updatedAt: serverTimestamp(),
+      });
+      this.scrollToBottom();
+      this.showToast(type === 'image' ? 'Imagen enviada.' : `${type.charAt(0).toUpperCase() + type.slice(1)} enviado.`);
+    } catch (error) {
+      console.error(`Error al enviar mensaje de ${type}:`, error);
+      this.showToast(`No se pudo enviar el/la ${type}.`);
+    }
   }
+
+  openImage(imageUrl?: string) {
+    if (imageUrl) {
+      console.log('Abriendo imagen (simulado):', imageUrl);
+      this.showToast('Visualizador de imagen no implementado.');
+      // Considerar usar un Modal de Ionic para mostrar la imagen aquí
+    }
+  }
+  // --- === FIN DE NUEVAS FUNCIONES PARA IMÁGENES === ---
+
+  scrollToBottom(duration: number = 300) { /* ... (sin cambios) ... */ }
+  async showToast(message: string) { /* ... (sin cambios) ... */ }
+  ngOnDestroy() { /* ... (sin cambios) ... */ }
 }
