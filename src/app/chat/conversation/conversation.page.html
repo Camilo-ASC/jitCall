@@ -1,0 +1,59 @@
+<ion-header>
+  <ion-toolbar>
+    <ion-buttons slot="start">
+      <ion-back-button defaultHref="/chat/list"></ion-back-button>
+    </ion-buttons>
+    <ion-title>{{ otherUserName || 'Chat' }}</ion-title>
+    <ion-buttons slot="end">
+      <ion-button (click)="triggerCall()">
+        <ion-icon slot="icon-only" name="call-outline"></ion-icon>
+      </ion-button>
+    </ion-buttons>
+  </ion-toolbar>
+</ion-header>
+
+<ion-content #chatContent class="ion-padding chat-content-background">
+  <div *ngIf="isLoadingMessages" class="loading-container">
+    <ion-spinner name="crescent"></ion-spinner>
+    <p>Cargando mensajes...</p>
+  </div>
+
+  <div class="message-list" *ngIf="!isLoadingMessages">
+    <div *ngFor="let msg of messages" 
+         class="message-wrapper"
+         [ngClass]="{
+           'message-sent': msg.senderId === currentUserId, 
+           'message-received': msg.senderId !== currentUserId
+         }">
+      <div class="chat-bubble">
+        <div class="message-text">
+          <p>{{ msg.text }}</p>
+        </div>
+        <div class="message-timestamp">
+          {{ msg.timestamp | date:'shortTime' }}
+        </div>
+      </div>
+    </div>
+  </div>
+</ion-content>
+
+<ion-footer class="chat-input-footer">
+  <ion-toolbar>
+    <ion-item lines="none" class="message-input-item">
+      <ion-textarea
+        autoGrow="true"
+        rows="1"
+        maxRows="4"
+        placeholder="Escribe un mensaje..."
+        [(ngModel)]="newMessageText"
+        (keydown.enter)="sendMessageOnEnter($event)">
+      </ion-textarea>
+    </ion-item>
+
+    <ion-buttons slot="end">
+      <ion-button (click)="sendMessage()" [disabled]="!newMessageText || newMessageText.trim() === ''">
+        <ion-icon slot="icon-only" name="send"></ion-icon>
+      </ion-button>
+    </ion-buttons>
+  </ion-toolbar>
+</ion-footer>

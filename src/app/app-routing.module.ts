@@ -5,7 +5,7 @@ import { AuthGuard } from './core/guards/auth.guard';
 const routes: Routes = [
   {
     path: '',
-    redirectTo: 'auth/login',
+    redirectTo: 'auth/login', // O 'home' si prefieres que intente ir a home y el guard lo redirija
     pathMatch: 'full'
   },
   {
@@ -26,20 +26,24 @@ const routes: Routes = [
     loadChildren: () => import('./home/home.module').then(m => m.HomePageModule),
     canActivate: [AuthGuard]
   },
-  // --- BLOQUE AÑADIDO ---
   {
-    path: 'contacts', // Cuando la URL sea /contacts...
-    loadChildren: () => import('./contacts/contacts.module').then(m => m.ContactsModule),
-    canActivate: [AuthGuard] // <-- También protegemos esta ruta con el guard
+    path: 'contacts',
+    loadChildren: () => import('./contacts/contacts.module').then(m => m.ContactsModule), // Asumiendo que se llama ContactsModule
+    canActivate: [AuthGuard]
   },
-
   {
-    path: 'call', // Cuando la URL sea /call/...
-    loadChildren: () => import('./call/call.module').then(m => m.CallModule),
-    canActivate: [AuthGuard] // Protegemos toda la sección de llamadas
+    path: 'call',
+    loadChildren: () => import('./call/call.module').then(m => m.CallModule), // Asumiendo que se llama CallModule
+    canActivate: [AuthGuard]
+  },
+  // --- RUTA CORREGIDA Y ÚNICA PARA EL CHAT ---
+  {
+    path: 'chat', // Cuando la URL sea /chat o /chat/...
+    loadChildren: () => import('./chat/chat.module').then( m => m.ChatModule), // Carga el módulo principal del chat
+    canActivate: [AuthGuard] // Protegemos toda la sección de chat
   }
-
-  // --- FIN DEL BLOQUE AÑADIDO ---
+  // Ya NO necesitamos una ruta separada para 'chat-list' aquí,
+  // eso se manejará dentro de 'chat-routing.module.ts'.
 ];
 
 @NgModule({
