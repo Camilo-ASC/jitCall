@@ -1,20 +1,29 @@
 import { Component } from '@angular/core';
 import { Router } from '@angular/router';
 import { ToastController } from '@ionic/angular';
-import { HttpClient } from '@angular/common/http'; // <-- 1. IMPORTACIÓN AÑADIDA
-import { v4 as uuidv4 } from 'uuid'; // <-- 2. IMPORTACIÓN AÑADIDA
+import { HttpClient } from '@angular/common/http';
+import { v4 as uuidv4 } from 'uuid';
 
 // --- IMPORTACIONES DIRECTAS DE FIREBASE ---
 import { initializeApp } from 'firebase/app';
 import { getAuth, User as FirebaseUser } from 'firebase/auth';
-import { getFirestore, doc, getDoc, collection, getDocs, deleteDoc } from 'firebase/firestore';
+import { 
+  getFirestore, 
+  doc, 
+  getDoc, 
+  collection, 
+  getDocs, 
+  deleteDoc,
+  setDoc,             // Asegúrate de que setDoc esté aquí
+  serverTimestamp     // Asegúrate de que serverTimestamp esté aquí
+} from 'firebase/firestore';
 import { environment } from 'src/environments/environment';
 import { User } from 'src/app/core/models/user.model';
 
 @Component({
   selector: 'app-home',
   templateUrl: './home.page.html',
-  standalone: false
+  standalone: false 
 })
 export class HomePage {
   // --- PROPIEDADES DE LA CLASE ---
@@ -33,7 +42,7 @@ export class HomePage {
   constructor(
     private router: Router,
     private toastController: ToastController,
-    private http: HttpClient // <-- 3. HTTPCLIENT INYECTADO
+    private http: HttpClient
   ) {}
 
   // --- CICLO DE VIDA DE IONIC PARA AUTO-REFRESCO ---
@@ -82,7 +91,6 @@ export class HomePage {
   // --- FUNCIÓN PARA MANEJAR LA BÚSQUEDA ---
   handleSearch(event: any) {
     this.currentSearchTerm = event?.target?.value?.toLowerCase() || ''; 
-
     if (!this.currentSearchTerm) {
       this.filteredContacts = [...this.contacts];
       return;
@@ -117,7 +125,6 @@ export class HomePage {
     }
   }
 
-  // --- 4. LÓGICA COMPLETA EN makeCall ---
   makeCall(contact: User) {
     if (!this.auth.currentUser || !this.userName) {
       this.showToast('Error de autenticación. Por favor, reinicia la app.');
@@ -127,10 +134,8 @@ export class HomePage {
       this.showToast(`${contact.name} no puede recibir llamadas (no tiene token FCM).`);
       return;
     }
-
     const meetingId = uuidv4();
     const currentUser = this.auth.currentUser;
-
     const notificationPayload = {
       token: contact.token,
       notification: {
@@ -148,11 +153,8 @@ export class HomePage {
         }
       }
     };
-
     const apiUrl = 'https://ravishing-courtesy-production.up.railway.app/notifications';
-    
     this.showToast(`Llamando a ${contact.name}...`);
-
     this.http.post(apiUrl, notificationPayload).subscribe({
       next: () => {
         console.log('Notificación de llamada enviada con éxito a la API.');
@@ -164,6 +166,63 @@ export class HomePage {
       }
     });
   }
+
+  // --- === NUEVA FUNCIÓN PARA INICIAR O ABRIR UN CHAT === ---
+  async startOrOpenChat(contactToChatWith: User) {
+    if (!this.auth.currentUser || !this.userName) {
+      this.showToast('Debes iniciar sesión para chatear.');
+      return;
+    }
+    if (!contactToChatWith || !contactToChatWith.uid) {
+      this.showToast('No se pudo identificar al contacto.');
+      return;
+    }
+
+    const currentUserUid = this.auth.currentUser.uid;
+    const contactUid = contactToChatWith.uid;
+
+    const ids = [currentUserUid, contactUid].sort();
+    const chatId = ids.join('_');
+
+    const chatDocRef = doc(this.db, 'chats', chatId);
+    this.isLoading = true; 
+    try {
+      const chatDocSnap = await getDoc(chatDocRef);
+
+      if (!chatDocSnap.exists()) {
+        console.log(`Creando nuevo chat con ID: ${chatId}`);
+        const currentUserDisplayName = this.userName; // Ya tenemos el nombre completo
+        const contactDisplayName = `${contactToChatWith.name} ${contactToChatWith.lastname}`;
+
+        await setDoc(chatDocRef, {
+          participants: ids,
+          participantInfo: {
+            [currentUserUid]: { name: currentUserDisplayName },
+            [contactUid]: { name: contactDisplayName }
+          },
+          createdAt: serverTimestamp(),
+          updatedAt: serverTimestamp(),
+          lastMessageText: '',
+          lastMessageTimestamp: serverTimestamp(),
+          lastMessageSenderId: '',
+          unreadCount: {
+            [currentUserUid]: 0,
+            [contactUid]: 0
+          }
+        });
+        this.showToast(`Chat iniciado con ${contactDisplayName}`);
+      } else {
+        console.log(`Abriendo chat existente con ID: ${chatId}`);
+      }
+      this.router.navigate(['/chat/conversation', chatId]);
+    } catch (error) {
+      console.error("Error al iniciar o abrir el chat:", error);
+      this.showToast('No se pudo iniciar la conversación.');
+    } finally {
+      this.isLoading = false;
+    }
+  }
+  // --- === FIN DE LA NUEVA FUNCIÓN === ---
 
   // --- MÉTODO AUXILIAR PARA MOSTRAR MENSAJES ---
   async showToast(message: string) {

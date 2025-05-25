@@ -10,7 +10,7 @@
       <ion-button [routerLink]="['/chat']">
         <ion-icon slot="icon-only" name="chatbubbles-outline" aria-label="Chats"></ion-icon>
       </ion-button>
-      </ion-buttons>
+    </ion-buttons>
   </ion-toolbar>
 </ion-header>
 
@@ -45,6 +45,9 @@
           <p>{{ contact.phone }}</p>
         </ion-label>
 
+        <ion-button slot="end" color="success" (click)="startOrOpenChat(contact)" fill="clear">
+          <ion-icon name="chatbox-ellipses-outline" slot="icon-only" aria-label="Chatear"></ion-icon>
+        </ion-button>
         <ion-button slot="end" color="primary" (click)="makeCall(contact)" fill="clear">
           <ion-icon name="call-outline" slot="icon-only" aria-label="Llamar"></ion-icon>
         </ion-button>

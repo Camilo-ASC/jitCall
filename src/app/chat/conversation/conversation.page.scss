@@ -1,0 +1,102 @@
+
+
+// Fondo para el chat (opcional, puedes poner una imagen o dejarlo por defecto)
+.chat-content-background {
+  // --background: url('/assets/chat-wallpaper.png') no-repeat center center / cover;
+}
+
+.loading-container {
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+  align-items: center;
+  height: 100%;
+  color: var(--ion-color-medium-shade);
+}
+
+.message-list {
+  display: flex;
+  flex-direction: column;
+  padding-bottom: 10px; // Espacio para que el último mensaje no quede debajo del input
+}
+
+.message-wrapper {
+  display: flex;
+  margin-bottom: 8px;
+  width: 100%;
+
+  .chat-bubble {
+    padding: 8px 12px;
+    // border-radius: 8px; // Movido a las clases específicas .message-sent y .message-received
+    max-width: 75%; // Las burbujas no ocupan todo el ancho
+    word-wrap: break-word; // Para que el texto largo se ajuste
+    box-shadow: 0 1px 1px rgba(0, 0, 0, 0.1);
+
+    .message-text p {
+      margin: 0;
+      padding: 0;
+      white-space: pre-wrap; // Conserva los saltos de línea en el mensaje
+    }
+
+    .message-timestamp {
+      font-size: 0.7em;
+      text-align: right;
+      margin-top: 4px;
+      opacity: 0.8;
+    }
+  }
+}
+
+.message-sent { // Mensajes enviados por el usuario actual
+  justify-content: flex-end; // Alinea a la derecha
+  .chat-bubble {
+    background-color: var(--ion-color-primary); // Color primario
+    color: var(--ion-color-primary-contrast);  // Color del texto para contraste
+    border-radius: 8px; // <-- AQUÍ EL CAMBIO PARA BURBUJAS MÁS CUADRADAS
+    margin-left: auto; // Empuja la burbuja a la derecha
+    margin-right: 5px;
+    .message-timestamp {
+      color: var(--ion-color-primary-contrast);
+      opacity: 0.7;
+    }
+  }
+}
+
+.message-received { // Mensajes recibidos de otro usuario
+  justify-content: flex-start; // Alinea a la izquierda
+  .chat-bubble {
+    background-color: var(--ion-color-light); // Un color más claro
+    color: var(--ion-color-dark);
+    border-radius: 8px; // <-- AQUÍ EL CAMBIO PARA BURBUJAS MÁS CUADRADAS
+    margin-right: auto; // Empuja la burbuja a la izquierda
+    margin-left: 5px;
+    .message-timestamp {
+      color: var(--ion-color-medium-shade);
+    }
+  }
+}
+
+// Estilos para el footer y el input del mensaje
+.chat-input-footer ion-toolbar {
+  --padding-start: 8px;
+  --padding-end: 8px;
+  --padding-top: 5px;
+  --padding-bottom: 5px;
+  // Para manejar el espacio de la barra de gestos en iOS/Android
+  padding-bottom: calc(5px + var(--ion-safe-area-bottom, 0px));
+}
+
+.message-input-item {
+  --padding-start: 0;
+  --inner-padding-end: 0;
+  flex-grow: 1; // Para que el input ocupe el espacio disponible
+  ion-textarea {
+    border: 1px solid var(--ion-color-medium-tint);
+    border-radius: 20px; // El input puede seguir siendo redondeado
+    padding-left: 12px !important;
+    padding-right: 12px !important;
+    --padding-top: 8px !important;
+    --padding-bottom: 8px !important;
+    max-height: 100px; // Para que no crezca demasiado con autoGrow
+  }
+}

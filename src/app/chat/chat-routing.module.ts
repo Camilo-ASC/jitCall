@@ -1,4 +1,4 @@
-// src/app/chat/chat-routing.module.ts
+
 import { NgModule } from '@angular/core';
 import { Routes, RouterModule } from '@angular/router';
 
@@ -15,12 +15,12 @@ const routes: Routes = [
     path: 'list', // Cuando la URL sea /chat/list
     // Carga perezosamente el módulo de tu página ChatListPage
     loadChildren: () => import('./chat-list/chat-list.module').then( m => m.ChatListPageModule)
-  }
-  // Más adelante aquí añadiremos la ruta para la conversación individual, ej:
-  // {
-  //   path: 'conversation/:chatId',
-  //   loadChildren: () => import('./conversation/conversation.module').then( m => m.ConversationPageModule)
-  // }
+  },
+  
+   {
+    path: 'conversation/:chatId',
+     loadChildren: () => import('./conversation/conversation.module').then( m => m.ConversationPageModule)
+   }
 ];
 
 @NgModule({
