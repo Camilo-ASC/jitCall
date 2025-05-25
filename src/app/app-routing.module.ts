@@ -31,7 +31,14 @@ const routes: Routes = [
     path: 'contacts', // Cuando la URL sea /contacts...
     loadChildren: () => import('./contacts/contacts.module').then(m => m.ContactsModule),
     canActivate: [AuthGuard] // <-- También protegemos esta ruta con el guard
+  },
+
+  {
+    path: 'call', // Cuando la URL sea /call/...
+    loadChildren: () => import('./call/call.module').then(m => m.CallModule),
+    canActivate: [AuthGuard] // Protegemos toda la sección de llamadas
   }
+
   // --- FIN DEL BLOQUE AÑADIDO ---
 ];
 
