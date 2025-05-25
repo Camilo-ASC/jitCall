@@ -1,13 +1,38 @@
-<ion-header [translucent]="true">
+<ion-header>
   <ion-toolbar>
-    <ion-title>add-contact</ion-title>
+    <ion-buttons slot="start">
+      <ion-back-button defaultHref="/home"></ion-back-button>
+    </ion-buttons>
+    <ion-title>Agregar Contacto</ion-title>
   </ion-toolbar>
 </ion-header>
 
-<ion-content [fullscreen]="true">
-  <ion-header collapse="condense">
-    <ion-toolbar>
-      <ion-title size="large">add-contact</ion-title>
-    </ion-toolbar>
-  </ion-header>
+<ion-content class="ion-padding">
+  
+  <form [formGroup]="contactForm" (ngSubmit)="searchAndAddContact()">
+    <ion-item>
+      <ion-input 
+        label="Teléfono del contacto"
+        labelPlacement="floating"
+        type="tel" 
+        formControlName="phone"
+        placeholder="Ingresa un numero para buscar"
+        clearInput="true">
+      </ion-input>
+    </ion-item>
+
+    <div *ngIf="contactForm.get('phone')?.invalid && contactForm.get('phone')?.touched" class="ion-padding-start ion-text-left" style="font-size: small; color: var(--ion-color-danger);">
+      Por favor, ingresa un número válido.
+    </div>
+
+    <ion-button 
+      type="submit" 
+      expand="block" 
+      class="ion-margin-top" 
+      [disabled]="contactForm.invalid || loading">
+      <ion-spinner *ngIf="loading" name="crescent"></ion-spinner>
+      <span *ngIf="!loading">Buscar y Agregar</span>
+    </ion-button>
+  </form>
+
 </ion-content>

@@ -9,4 +9,50 @@
 
 <ion-content class="ion-padding">
   <h2 *ngIf="userName">¡Bienvenido, {{ userName }}!</h2>
+
+  <ion-searchbar 
+    placeholder="Buscar contacto por nombre..."
+    (ionInput)="handleSearch($event)" 
+    debounce="300"
+    animated="true"> 
+    </ion-searchbar>
+  <div *ngIf="isLoading" class="ion-text-center ion-padding">
+    <ion-spinner></ion-spinner>
+  </div>
+  
+  <div *ngIf="!isLoading">
+    <div *ngIf="contacts.length === 0" class="ion-text-center ion-padding">
+      <p>No tienes contactos todavía.</p>
+      <p>¡Presiona el botón '+' para agregar tu primero!</p>
+    </div>
+
+    <div *ngIf="contacts.length > 0 && filteredContacts.length === 0" class="ion-text-center ion-padding">
+      <p>No se encontraron contactos con ese nombre.</p>
+    </div>
+
+    <ion-list *ngIf="filteredContacts.length > 0">
+      <ion-item *ngFor="let contact of filteredContacts"> 
+        <ion-label>
+          <h2>{{ contact.name }} {{ contact.lastname }}</h2>
+          <p>{{ contact.phone }}</p>
+        </ion-label>
+
+        <ion-button slot="end" color="primary" (click)="makeCall(contact)" fill="clear">
+          <ion-icon name="call-outline" slot="icon-only"></ion-icon>
+        </ion-button>
+        <ion-button slot="end" color="secondary" (click)="goToEditContact(contact.uid!)" fill="clear">
+          <ion-icon name="pencil-outline" slot="icon-only"></ion-icon>
+        </ion-button>
+        <ion-button slot="end" color="danger" (click)="deleteContact(contact.uid!)" fill="clear">
+          <ion-icon name="trash-outline" slot="icon-only"></ion-icon>
+        </ion-button>
+      </ion-item>
+    </ion-list>
+  </div>
+
+  <ion-fab vertical="bottom" horizontal="end" slot="fixed">
+    <ion-fab-button (click)="goToAddContact()">
+      <ion-icon name="add"></ion-icon>
+    </ion-fab-button>
+  </ion-fab>
 </ion-content>
