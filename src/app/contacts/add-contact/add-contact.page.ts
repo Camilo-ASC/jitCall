@@ -75,7 +75,8 @@ export class AddContactPage {
         name: foundUserData.name,
         lastname: foundUserData.lastname,
         phone: foundUserData.phone,
-        email: foundUserData.email
+        email: foundUserData.email,
+        token: foundUserData.token || ''
       });
       
       this.showToast('¡Contacto agregado con éxito!');
