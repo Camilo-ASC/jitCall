@@ -1,13 +1,70 @@
-<ion-header [translucent]="true">
+<ion-header>
   <ion-toolbar>
-    <ion-title>edit-contact</ion-title>
+    <ion-buttons slot="start">
+      <ion-back-button defaultHref="/home"></ion-back-button>
+    </ion-buttons>
+    <ion-title>Editar Contacto</ion-title>
   </ion-toolbar>
 </ion-header>
 
-<ion-content [fullscreen]="true">
-  <ion-header collapse="condense">
-    <ion-toolbar>
-      <ion-title size="large">edit-contact</ion-title>
-    </ion-toolbar>
-  </ion-header>
+<ion-content class="ion-padding">
+  <div *ngIf="isLoading" class="ion-text-center">
+    <ion-spinner name="crescent"></ion-spinner>
+    <p>Cargando datos del contacto...</p>
+  </div>
+
+  <form [formGroup]="editContactForm" (ngSubmit)="saveChanges()" *ngIf="!isLoading && contactId">
+    <ion-item>
+      <ion-input 
+        label="Nombre"
+        labelPlacement="floating"
+        type="text" 
+        formControlName="name"
+        required>
+      </ion-input>
+    </ion-item>
+    <div *ngIf="editContactForm.get('name')?.invalid && editContactForm.get('name')?.touched" class="error-message">
+      El nombre es requerido.
+    </div>
+
+    <ion-item>
+      <ion-input 
+        label="Apellido"
+        labelPlacement="floating"
+        type="text" 
+        formControlName="lastname"
+        required>
+      </ion-input>
+    </ion-item>
+    <div *ngIf="editContactForm.get('lastname')?.invalid && editContactForm.get('lastname')?.touched" class="error-message">
+      El apellido es requerido.
+    </div>
+    
+    <ion-item lines="none" *ngIf="initialContactData?.phone">
+      <ion-label position="stacked">Teléfono:</ion-label>
+      <p style="padding-left: 16px; padding-top: 8px; margin:0;">{{ initialContactData.phone }}</p>
+    </ion-item>
+    
+    <ion-button 
+      type="submit" 
+      expand="block" 
+      class="ion-margin-top" 
+      [disabled]="editContactForm.invalid || isSaving">
+      <ion-spinner *ngIf="isSaving" name="crescent"></ion-spinner>
+      <span *ngIf="!isSaving">Guardar Cambios</span>
+    </ion-button>
+  </form>
+
+  <div *ngIf="!isLoading && !contactId" class="ion-text-center ion-padding">
+    <p>No se pudo cargar el contacto. Intenta de nuevo.</p>
+  </div>
+
 </ion-content>
+
+<style>
+  .error-message {
+    font-size: small;
+    color: var(--ion-color-danger);
+    padding-left: 16px; /* Alineado con el input */
+  }
+</style>

@@ -25,7 +25,14 @@ const routes: Routes = [
     path: 'home',
     loadChildren: () => import('./home/home.module').then(m => m.HomePageModule),
     canActivate: [AuthGuard]
+  },
+  // --- BLOQUE AÑADIDO ---
+  {
+    path: 'contacts', // Cuando la URL sea /contacts...
+    loadChildren: () => import('./contacts/contacts.module').then(m => m.ContactsModule),
+    canActivate: [AuthGuard] // <-- También protegemos esta ruta con el guard
   }
+  // --- FIN DEL BLOQUE AÑADIDO ---
 ];
 
 @NgModule({
