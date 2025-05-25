@@ -6,7 +6,7 @@
     <ion-title>{{ otherUserName || 'Chat' }}</ion-title>
     <ion-buttons slot="end">
       <ion-button (click)="triggerCall()">
-        <ion-icon slot="icon-only" name="call-outline"></ion-icon>
+        <ion-icon slot="icon-only" name="call-outline" aria-label="Llamar"></ion-icon>
       </ion-button>
     </ion-buttons>
   </ion-toolbar>
@@ -27,7 +27,8 @@
          }">
       <div class="chat-bubble">
         <div class="message-text">
-          <p>{{ msg.text }}</p>
+          <p *ngIf="msg.type === 'text'">{{ msg.text }}</p>
+          <img *ngIf="msg.type === 'image' && msg.fileUrl" [src]="msg.fileUrl" alt="Imagen adjunta" style="max-width: 100%; border-radius: 10px; cursor: pointer;" (click)="openImage(msg.fileUrl)"/>
         </div>
         <div class="message-timestamp">
           {{ msg.timestamp | date:'shortTime' }}
@@ -39,6 +40,11 @@
 
 <ion-footer class="chat-input-footer">
   <ion-toolbar>
+    <ion-buttons slot="start">
+      <ion-button (click)="selectAndSendImage()" fill="clear" color="medium">
+        <ion-icon slot="icon-only" name="images-outline" aria-label="Enviar imagen"></ion-icon>
+      </ion-button>
+      </ion-buttons>
     <ion-item lines="none" class="message-input-item">
       <ion-textarea
         autoGrow="true"
@@ -52,7 +58,7 @@
 
     <ion-buttons slot="end">
       <ion-button (click)="sendMessage()" [disabled]="!newMessageText || newMessageText.trim() === ''">
-        <ion-icon slot="icon-only" name="send"></ion-icon>
+        <ion-icon slot="icon-only" name="send" aria-label="Enviar mensaje"></ion-icon>
       </ion-button>
     </ion-buttons>
   </ion-toolbar>
