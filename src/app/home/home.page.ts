@@ -1,6 +1,8 @@
 import { Component } from '@angular/core';
 import { Router } from '@angular/router';
 import { ToastController } from '@ionic/angular';
+import { HttpClient } from '@angular/common/http'; // <-- 1. IMPORTACIÓN AÑADIDA
+import { v4 as uuidv4 } from 'uuid'; // <-- 2. IMPORTACIÓN AÑADIDA
 
 // --- IMPORTACIONES DIRECTAS DE FIREBASE ---
 import { initializeApp } from 'firebase/app';
@@ -20,7 +22,7 @@ export class HomePage {
   contacts: User[] = [];
   filteredContacts: User[] = [];
   isLoading = true;
-  currentSearchTerm: string = ''; // <-- 1. AÑADIDA ESTA NUEVA PROPIEDAD
+  currentSearchTerm: string = '';
 
   // --- INICIALIZACIÓN DE FIREBASE ---
   private app = initializeApp(environment.firebaseConfig);
@@ -30,7 +32,8 @@ export class HomePage {
   // --- CONSTRUCTOR ---
   constructor(
     private router: Router,
-    private toastController: ToastController
+    private toastController: ToastController,
+    private http: HttpClient // <-- 3. HTTPCLIENT INYECTADO
   ) {}
 
   // --- CICLO DE VIDA DE IONIC PARA AUTO-REFRESCO ---
@@ -66,7 +69,7 @@ export class HomePage {
       const contactsColRef = collection(this.db, `users/${uid}/contacts`);
       const contactsSnapshot = await getDocs(contactsColRef);
       this.contacts = contactsSnapshot.docs.map(doc => doc.data() as User);
-      this.handleSearch({ target: { value: this.currentSearchTerm } }); // Usamos el término actual o vacío
+      this.handleSearch({ target: { value: this.currentSearchTerm } }); 
     } catch (error) {
       console.error("Error al traer los contactos:", error);
       this.contacts = [];
@@ -78,7 +81,6 @@ export class HomePage {
 
   // --- FUNCIÓN PARA MANEJAR LA BÚSQUEDA ---
   handleSearch(event: any) {
-    // <-- 2. ACTUALIZAMOS currentSearchTerm AQUÍ
     this.currentSearchTerm = event?.target?.value?.toLowerCase() || ''; 
 
     if (!this.currentSearchTerm) {
@@ -107,10 +109,7 @@ export class HomePage {
       const contactDocRef = doc(this.db, `users/${this.auth.currentUser.uid}/contacts/${contactId}`);
       await deleteDoc(contactDocRef);
       this.contacts = this.contacts.filter(contact => contact.uid !== contactId);
-      
-      // <-- 3. LLAMAMOS A handleSearch PARA ACTUALIZAR LA VISTA
       this.handleSearch({ target: { value: this.currentSearchTerm } }); 
-      
       this.showToast('Contacto eliminado con éxito.');
     } catch (error) {
       console.error("Error al eliminar contacto:", error);
@@ -118,9 +117,52 @@ export class HomePage {
     }
   }
 
+  // --- 4. LÓGICA COMPLETA EN makeCall ---
   makeCall(contact: User) {
-    console.log(`Llamar a: ${contact.name} (ID: ${contact.uid})`);
-    // La lógica de la llamada vendrá aquí en el siguiente paso.
+    if (!this.auth.currentUser || !this.userName) {
+      this.showToast('Error de autenticación. Por favor, reinicia la app.');
+      return;
+    }
+    if (!contact.token) {
+      this.showToast(`${contact.name} no puede recibir llamadas (no tiene token FCM).`);
+      return;
+    }
+
+    const meetingId = uuidv4();
+    const currentUser = this.auth.currentUser;
+
+    const notificationPayload = {
+      token: contact.token,
+      notification: {
+        title: "Llamada entrante",
+        body: `${this.userName} te está llamando`
+      },
+      android: {
+        priority: "high",
+        data: {
+          userId: contact.uid, 
+          meetingId: meetingId,
+          type: "incoming_call",
+          name: this.userName,
+          userFrom: currentUser.uid
+        }
+      }
+    };
+
+    const apiUrl = 'https://ravishing-courtesy-production.up.railway.app/notifications';
+    
+    this.showToast(`Llamando a ${contact.name}...`);
+
+    this.http.post(apiUrl, notificationPayload).subscribe({
+      next: () => {
+        console.log('Notificación de llamada enviada con éxito a la API.');
+        this.router.navigate(['/call/jitsi-call', meetingId]);
+      },
+      error: (err) => {
+        console.error('Error al enviar notificación de llamada a la API:', err);
+        this.showToast('No se pudo iniciar la llamada (error de API).');
+      }
+    });
   }
 
   // --- MÉTODO AUXILIAR PARA MOSTRAR MENSAJES ---
