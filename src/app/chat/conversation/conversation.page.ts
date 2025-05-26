@@ -1,4 +1,4 @@
-import { Component, OnInit, OnDestroy, ViewChild, ChangeDetectorRef } from '@angular/core';
+import { Component, OnInit, OnDestroy, ViewChild, ChangeDetectorRef, QueryList, ViewChildren, ElementRef } from '@angular/core';
 import { ActivatedRoute, Router } from '@angular/router';
 import { ToastController, IonContent, Platform, AlertController } from '@ionic/angular';
 import { HttpClient } from '@angular/common/http';
@@ -52,6 +52,7 @@ interface MessageDocumentData {
   timestamp: Timestamp;
 }
 
+// ChatMessage actualizada para incluir propiedades de reproducción de audio
 export interface ChatMessage {
   id?: string;
   senderId: string;
@@ -62,6 +63,11 @@ export interface ChatMessage {
   fileName?: string;
   location?: { latitude: number; longitude: number };
   timestamp?: Date;
+  isPlayingAudio?: boolean;
+  audioDuration?: number; 
+  currentTime?: number; 
+  durationFormatted?: string;
+  currentTimeFormatted?: string;
 }
 
 @Component({
@@ -72,6 +78,7 @@ export interface ChatMessage {
 })
 export class ConversationPage implements OnInit, OnDestroy {
   @ViewChild(IonContent) chatContent!: IonContent;
+  @ViewChildren('audioPlayer') audioPlayers!: QueryList<ElementRef<HTMLAudioElement>>;
 
   chatId: string | null = null;
   messages: ChatMessage[] = [];
@@ -184,7 +191,12 @@ export class ConversationPage implements OnInit, OnDestroy {
         return {
           id: doc.id, senderId: data.senderId, receiverId: data.receiverId,
           text: data.text, type: data.type, fileUrl: data.fileUrl,
-          fileName: data.fileName, location: data.location, timestamp: messageTimestampDate
+          fileName: data.fileName, location: data.location, timestamp: messageTimestampDate,
+          isPlayingAudio: false, 
+          audioDuration: 0,      
+          currentTime: 0,        
+          durationFormatted: '0:00', 
+          currentTimeFormatted: '0:00' 
         } as ChatMessage;
       });
       this.isLoadingMessages = false;
@@ -297,19 +309,19 @@ export class ConversationPage implements OnInit, OnDestroy {
       });
       if (image.dataUrl) {
         this.showToast('Subiendo imagen...', 4000);
-        const blob = await this.dataUrlToBlob(image.dataUrl); // <--- CUERPO RESTAURADO AQUÍ
+        const blob = await this.dataUrlToBlob(image.dataUrl);
         const fileName = `chat_media/${this.chatId}/${new Date().getTime()}.${image.format}`;
         const { data: uploadData, error: uploadError } = await this.supabase.storage
           .from(this.bucketName).upload(fileName, blob, { 
             contentType: image.format === 'jpg' ? 'image/jpeg' : `image/${image.format}`, upsert: false 
           });
-        if (uploadError) { console.error('Error Supabase:', uploadError); throw uploadError; }
+        if (uploadError) { console.error('Error Supabase img:', uploadError); throw uploadError; }
         if (uploadData && uploadData.path) {
           const { data: urlData } = this.supabase.storage.from(this.bucketName).getPublicUrl(uploadData.path);
           if (urlData && urlData.publicUrl) {
             await this.sendMediaMessage(urlData.publicUrl, 'image', `imagen.${image.format}`);
-          } else { throw new Error('No se pudo obtener URL pública.'); }
-        } else { throw new Error('No se recibió info de subida de Supabase.'); }
+          } else { throw new Error('No se pudo obtener URL pública de imagen.'); }
+        } else { throw new Error('No se recibió info de subida de Supabase para imagen.'); }
       }
     } catch (error: any) {
       console.error('Error en selectAndSendImage:', error);
@@ -327,7 +339,7 @@ export class ConversationPage implements OnInit, OnDestroy {
     }
   }
 
-  // ESTA ES LA IMPLEMENTACIÓN CORRECTA DE dataUrlToBlob
+  // CUERPO CORRECTO DE dataUrlToBlob
   private async dataUrlToBlob(dataUrl: string): Promise<Blob> {
     const response = await fetch(dataUrl);
     const blob = await response.blob();
@@ -397,7 +409,7 @@ export class ConversationPage implements OnInit, OnDestroy {
           const base64Sound = result.value.recordDataBase64;
           const mimeType = result.value.mimeType || 'audio/aac';
           const fileExtension = mimeType.split('/').pop() || 'aac';
-          const audioBlob = await this.base64ToBlob(`data:${mimeType};base64,${base64Sound}`, mimeType); // LLAMADA A base64ToBlob
+          const audioBlob = await this.base64ToBlob(`data:${mimeType};base64,${base64Sound}`, mimeType); // CUERPO CORRECTO DE base64ToBlob
           const fileName = `chat_media/${this.chatId}/audio_${new Date().getTime()}.${fileExtension}`;
           const { data: uploadData, error: uploadError } = await this.supabase.storage
             .from(this.bucketName).upload(fileName, audioBlob, { contentType: mimeType, upsert: false });
@@ -432,8 +444,7 @@ export class ConversationPage implements OnInit, OnDestroy {
     }
   }
   
-  // ESTA ES LA IMPLEMENTACIÓN CORRECTA DE base64ToBlob
-  // (usada por la función de audio)
+  // CUERPO CORRECTO DE base64ToBlob (usada por la función de audio)
   private async base64ToBlob(dataURI: string, contentType: string = ''): Promise<Blob> {
     const base64WithoutPrefix = dataURI.startsWith('data:') ? dataURI.split(',')[1] : dataURI;
     const byteString = atob(base64WithoutPrefix);
@@ -444,6 +455,85 @@ export class ConversationPage implements OnInit, OnDestroy {
     }
     return new Blob([ab], { type: contentType });
   }
+
+  // --- === NUEVAS FUNCIONES PARA CONTROLES DE AUDIO PERSONALIZADOS (REPRODUCCIÓN) === ---
+  getAudioElement(msgId?: string): HTMLAudioElement | undefined {
+    if (!msgId) return undefined;
+    const audioRef = this.audioPlayers.find(ref => ref.nativeElement.id === `audioPlayer_${msgId}`);
+    return audioRef?.nativeElement;
+  }
+
+  toggleAudioPlayback(msg: ChatMessage) {
+    const audioElement = this.getAudioElement(msg.id);
+    if (!audioElement) {
+      console.error('Elemento de audio no encontrado para el mensaje:', msg.id);
+      return;
+    }
+
+    if (audioElement.paused || audioElement.ended) {
+      this.audioPlayers.forEach(ref => {
+        const otherAudio = ref.nativeElement;
+        if (otherAudio !== audioElement && !otherAudio.paused) {
+          otherAudio.pause();
+          const otherMsgId = otherAudio.id.replace('audioPlayer_', '');
+          const otherMsg = this.messages.find(m => m.id === otherMsgId);
+          if (otherMsg) {
+            otherMsg.isPlayingAudio = false;
+          }
+        }
+      });
+      audioElement.play().catch(e => console.error("Error al reproducir audio:", e));
+      msg.isPlayingAudio = true;
+    } else {
+      audioElement.pause();
+      msg.isPlayingAudio = false;
+    }
+    this.cdr.detectChanges(); 
+  }
+
+  setAudioDuration(msg: ChatMessage, duration: number) {
+    if (msg && !isNaN(duration) && duration !== Infinity) {
+      msg.audioDuration = duration;
+      msg.durationFormatted = this.formatDuration(duration);
+      if (!msg.currentTimeFormatted || msg.currentTime === 0) {
+        msg.currentTimeFormatted = this.formatDuration(0);
+      }
+      this.cdr.detectChanges();
+    }
+  }
+
+  updateAudioProgress(msg: ChatMessage, currentTime: number, duration: number) {
+    if (msg && !isNaN(currentTime) && !isNaN(duration) && duration > 0) {
+      msg.currentTime = currentTime;
+      msg.currentTimeFormatted = this.formatDuration(currentTime);
+      this.cdr.detectChanges();
+    }
+  }
+  
+  onAudioPlaybackEnd(msg: ChatMessage) {
+    if (msg) {
+      msg.isPlayingAudio = false;
+      msg.currentTime = 0; 
+      msg.currentTimeFormatted = this.formatDuration(0);
+      this.cdr.detectChanges();
+    }
+    const audioElement = this.getAudioElement(msg.id);
+    if (audioElement) {
+      audioElement.currentTime = 0; 
+    }
+  }
+
+  formatDuration(seconds: number): string {
+    if (isNaN(seconds) || seconds === Infinity || seconds < 0) {
+      return '0:00';
+    }
+    const minutes: number = Math.floor(seconds / 60);
+    const remainingSeconds: number = Math.floor(seconds % 60);
+    const formattedSeconds: string = remainingSeconds < 10 ? `0${remainingSeconds}` : `${remainingSeconds}`;
+    return `${minutes}:${formattedSeconds}`;
+  }
+  // --- === FIN DE NUEVAS FUNCIONES PARA CONTROLES DE AUDIO (REPRODUCCIÓN) === ---
+
 
   scrollToBottom(duration: number = 300) {
     setTimeout(() => {
