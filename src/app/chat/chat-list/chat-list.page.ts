@@ -1,5 +1,5 @@
 import { Component } from '@angular/core';
-import { Router } from '@angular/router'; // Asegúrate de que Router esté importado
+import { Router } from '@angular/router'; 
 import { initializeApp } from 'firebase/app';
 import { getAuth, User as FirebaseUser } from 'firebase/auth';
 import { 

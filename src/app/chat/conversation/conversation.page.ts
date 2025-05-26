@@ -1,6 +1,6 @@
-import { Component, OnInit, OnDestroy, ViewChild } from '@angular/core';
+import { Component, OnInit, OnDestroy, ViewChild, ChangeDetectorRef, QueryList, ViewChildren, ElementRef } from '@angular/core';
 import { ActivatedRoute, Router } from '@angular/router';
-import { ToastController, IonContent, Platform } from '@ionic/angular'; // Platform AÑADIDO
+import { ToastController, IonContent, Platform, AlertController } from '@ionic/angular';
 import { HttpClient } from '@angular/common/http';
 import { v4 as uuidv4 } from 'uuid';
 
@@ -26,8 +26,9 @@ import { environment } from 'src/environments/environment';
 // Supabase
 import { createClient, SupabaseClient } from '@supabase/supabase-js';
 
-// Capacitor Camera
-import { Camera, CameraResultType, CameraSource, Photo } from '@capacitor/camera'; // <-- IMPORTACIÓN PARA CAMERA
+// Capacitor Plugins
+import { Camera, CameraResultType, CameraSource, Photo } from '@capacitor/camera';
+import { VoiceRecorder, RecordingData, GenericResponse } from 'capacitor-voice-recorder';
 
 // Modelo User
 import { User } from 'src/app/core/models/user.model'; 
@@ -44,13 +45,14 @@ interface MessageDocumentData {
   senderId: string;
   receiverId: string;
   text?: string;
-  type: 'text' | 'image' | 'audio' | 'video' | 'file' | 'location'; // Tipos de mensaje
+  type: 'text' | 'image' | 'audio' | 'video' | 'file' | 'location';
   fileUrl?: string;
   fileName?: string;
   location?: { latitude: number; longitude: number };
   timestamp: Timestamp;
 }
 
+// ChatMessage actualizada para incluir propiedades de reproducción de audio
 export interface ChatMessage {
   id?: string;
   senderId: string;
@@ -61,6 +63,11 @@ export interface ChatMessage {
   fileName?: string;
   location?: { latitude: number; longitude: number };
   timestamp?: Date;
+  isPlayingAudio?: boolean;
+  audioDuration?: number; 
+  currentTime?: number; 
+  durationFormatted?: string;
+  currentTimeFormatted?: string;
 }
 
 @Component({
@@ -71,6 +78,7 @@ export interface ChatMessage {
 })
 export class ConversationPage implements OnInit, OnDestroy {
   @ViewChild(IonContent) chatContent!: IonContent;
+  @ViewChildren('audioPlayer') audioPlayers!: QueryList<ElementRef<HTMLAudioElement>>;
 
   chatId: string | null = null;
   messages: ChatMessage[] = [];
@@ -80,6 +88,9 @@ export class ConversationPage implements OnInit, OnDestroy {
   currentUserId: string | null = null;
   otherUserId: string | null = null;
   otherUserName: string | null = 'Chat';
+
+  isRecording = false;
+  private canRecordAudio = false;
 
   private app: FirebaseApp;
   private auth = getAuth(); 
@@ -97,50 +108,61 @@ export class ConversationPage implements OnInit, OnDestroy {
     private router: Router,
     private toastController: ToastController,
     private http: HttpClient,
-    private platform: Platform // Inyectamos Platform
+    private platform: Platform,
+    private alertController: AlertController,
+    private cdr: ChangeDetectorRef
   ) {
     this.app = initializeApp(environment.firebaseConfig);
     this.auth = getAuth(this.app);
     this.db = getFirestore(this.app);
     this.supabase = createClient(environment.supabaseUrl, environment.supabaseKey);
-    console.log('Supabase client initialized using environment variables');
   }
 
   ngOnInit() {
     this.chatId = this.route.snapshot.paramMap.get('chatId');
     const user = this.auth.currentUser;
-
-    if (user) {
-      this.currentUserId = user.uid;
-    } else {
-      this.router.navigate(['/auth/login']);
-      return;
+    if (user) { 
+      this.currentUserId = user.uid; 
+    } else { 
+      this.router.navigate(['/auth/login']); 
+      return; 
     }
 
     if (this.chatId) {
       this.loadChatInfo();
       this.loadMessages();
+      if (this.platform.is('capacitor')) {
+        this.checkAudioPermission(); 
+      }
     } else {
       this.showToast('Error: No se pudo cargar la conversación.');
       this.router.navigate(['/chat/list']);
     }
   }
+  
+  async checkAudioPermission() {
+    try {
+      const permStatus = await VoiceRecorder.requestAudioRecordingPermission();
+      this.canRecordAudio = permStatus.value;
+      if (!permStatus.value) {
+        console.warn('Permiso para grabar audio denegado inicialmente.');
+      }
+    } catch (e) {
+      console.error("Error solicitando permiso de audio:", e);
+      this.canRecordAudio = false;
+    }
+  }
 
   async loadChatInfo() {
     if (!this.chatId || !this.currentUserId) return;
-
     const chatDocRef = doc(this.db, 'chats', this.chatId);
     this.chatDocUnsubscribe = onSnapshot(chatDocRef, (docSnap) => {
       if (docSnap.exists()) {
         const chatData = docSnap.data() as ChatData;
         this.otherUserId = chatData.participants.find(uid => uid !== this.currentUserId) || null; 
-        
         if (this.otherUserId && chatData.participantInfo && chatData.participantInfo[this.otherUserId]) {
           this.otherUserName = chatData.participantInfo[this.otherUserId].name;
-          this.contactForCall = { 
-            uid: this.otherUserId, 
-            name: this.otherUserName,
-          };
+          this.contactForCall = { uid: this.otherUserId, name: this.otherUserName };
         } else {
           this.otherUserName = 'Desconocido';
         }
@@ -157,10 +179,8 @@ export class ConversationPage implements OnInit, OnDestroy {
   loadMessages() {
     if (!this.chatId) return;
     this.isLoadingMessages = true;
-
     const messagesRef = collection(this.db, `chats/${this.chatId}/messages`);
     const q = query(messagesRef, orderBy('timestamp', 'asc'));
-
     this.messagesUnsubscribe = onSnapshot(q, (querySnapshot) => {
       this.messages = querySnapshot.docs.map(doc => {
         const data = doc.data() as MessageDocumentData;
@@ -169,15 +189,14 @@ export class ConversationPage implements OnInit, OnDestroy {
             messageTimestampDate = data.timestamp.toDate();
         }
         return {
-          id: doc.id,
-          senderId: data.senderId,
-          receiverId: data.receiverId,
-          text: data.text,
-          type: data.type,
-          fileUrl: data.fileUrl,
-          fileName: data.fileName,
-          location: data.location,
-          timestamp: messageTimestampDate
+          id: doc.id, senderId: data.senderId, receiverId: data.receiverId,
+          text: data.text, type: data.type, fileUrl: data.fileUrl,
+          fileName: data.fileName, location: data.location, timestamp: messageTimestampDate,
+          isPlayingAudio: false, 
+          audioDuration: 0,      
+          currentTime: 0,        
+          durationFormatted: '0:00', 
+          currentTimeFormatted: '0:00' 
         } as ChatMessage;
       });
       this.isLoadingMessages = false;
@@ -194,22 +213,17 @@ export class ConversationPage implements OnInit, OnDestroy {
       return;
     }
     const messageData = {
-      senderId: this.currentUserId,
-      receiverId: this.otherUserId,
-      text: this.newMessageText.trim(),
-      type: 'text' as const,
+      senderId: this.currentUserId, receiverId: this.otherUserId,
+      text: this.newMessageText.trim(), type: 'text' as const,
       timestamp: serverTimestamp()
     };
     try {
       const messagesRef = collection(this.db, `chats/${this.chatId}/messages`);
       await addDoc(messagesRef, messageData);
-
       const chatDocRef = doc(this.db, 'chats', this.chatId);
       await updateDoc(chatDocRef, {
-        lastMessageText: messageData.text,
-        lastMessageTimestamp: serverTimestamp(),
-        lastMessageSenderId: this.currentUserId,
-        updatedAt: serverTimestamp(),
+        lastMessageText: messageData.text, lastMessageTimestamp: serverTimestamp(),
+        lastMessageSenderId: this.currentUserId, updatedAt: serverTimestamp(),
       });
       this.newMessageText = '';
       this.scrollToBottom();
@@ -229,16 +243,14 @@ export class ConversationPage implements OnInit, OnDestroy {
 
   async triggerCall() {
     if (!this.contactForCall || !this.contactForCall.uid || !this.otherUserName) {
-      this.showToast('Datos de contacto incompletos para llamar.');
-      return;
+      this.showToast('Datos de contacto incompletos para llamar.'); return;
     }
     const contactUserDocRef = doc(this.db, 'users', this.contactForCall.uid);
     try {
       const contactUserSnap = await getDoc(contactUserDocRef);
       const contactData = contactUserSnap.data() as User | undefined; 
       if (!contactUserSnap.exists() || !contactData?.token) {
-        this.showToast(`${this.otherUserName} no puede recibir llamadas (sin token).`);
-        return;
+        this.showToast(`${this.otherUserName} no puede recibir llamadas (sin token).`); return;
       }
       const contactTokenFCM = contactData.token;
       const currentUser = this.auth.currentUser;
@@ -252,10 +264,7 @@ export class ConversationPage implements OnInit, OnDestroy {
             currentUserNameForCall = currentUser.email?.split('@')[0] || 'Alguien';
         }
       }
-      if (!currentUser) {
-        this.showToast('Error de autenticación.');
-        return;
-      }
+      if (!currentUser) { this.showToast('Error de autenticación.'); return; }
       const meetingId = uuidv4();
       const notificationPayload = {
         token: contactTokenFCM,
@@ -272,10 +281,7 @@ export class ConversationPage implements OnInit, OnDestroy {
       this.showToast(`Llamando a ${this.otherUserName}...`);
       this.http.post(apiUrl, notificationPayload).subscribe({
         next: () => this.router.navigate(['/call/jitsi-call', meetingId]),
-        error: (err) => {
-          console.error("Error API llamada:", err);
-          this.showToast('No se pudo iniciar la llamada.');
-        }
+        error: (err) => { console.error("Error API llamada:", err); this.showToast('No se pudo iniciar la llamada.'); }
       });
     } catch (error) {
       console.error("Error preparando llamada:", error);
@@ -283,63 +289,39 @@ export class ConversationPage implements OnInit, OnDestroy {
     }
   }
 
-  // --- === NUEVAS FUNCIONES PARA ENVIAR IMÁGENES === ---
   async selectAndSendImage() {
     if (!this.chatId || !this.currentUserId || !this.otherUserId) {
-      this.showToast('Error: Información de chat no disponible.');
-      return;
+      this.showToast('Error: Información de chat no disponible.'); return;
     }
-
     try {
       if (this.platform.is('capacitor')) {
         const permissions = await Camera.checkPermissions();
         if (permissions.camera === 'denied' || permissions.photos === 'denied') {
           const requestedPermissions = await Camera.requestPermissions();
           if (requestedPermissions.camera === 'denied' || requestedPermissions.photos === 'denied') {
-            this.showToast('Permiso de cámara/galería denegado.');
-            return;
+            this.showToast('Permiso de cámara/galería denegado.'); return;
           }
         }
       }
-
       const image = await Camera.getPhoto({
-        quality: 90,
-        allowEditing: false,
-        resultType: CameraResultType.DataUrl,
+        quality: 90, allowEditing: false, resultType: CameraResultType.DataUrl,
         source: CameraSource.Prompt 
       });
-
       if (image.dataUrl) {
-        this.showToast('Subiendo imagen...');
-
+        this.showToast('Subiendo imagen...', 4000);
         const blob = await this.dataUrlToBlob(image.dataUrl);
         const fileName = `chat_media/${this.chatId}/${new Date().getTime()}.${image.format}`;
-        
         const { data: uploadData, error: uploadError } = await this.supabase.storage
-          .from(this.bucketName)
-          .upload(fileName, blob, {
-            contentType: image.format === 'jpg' ? 'image/jpeg' : `image/${image.format}`,
-            upsert: false 
+          .from(this.bucketName).upload(fileName, blob, { 
+            contentType: image.format === 'jpg' ? 'image/jpeg' : `image/${image.format}`, upsert: false 
           });
-
-        if (uploadError) {
-          console.error('Error al subir a Supabase:', uploadError);
-          throw uploadError;
-        }
-
+        if (uploadError) { console.error('Error Supabase img:', uploadError); throw uploadError; }
         if (uploadData && uploadData.path) {
-          const { data: urlData } = this.supabase.storage
-            .from(this.bucketName)
-            .getPublicUrl(uploadData.path);
-
+          const { data: urlData } = this.supabase.storage.from(this.bucketName).getPublicUrl(uploadData.path);
           if (urlData && urlData.publicUrl) {
             await this.sendMediaMessage(urlData.publicUrl, 'image', `imagen.${image.format}`);
-          } else {
-            throw new Error('No se pudo obtener la URL pública de la imagen.');
-          }
-        } else {
-          throw new Error('No se recibió info de subida de Supabase.');
-        }
+          } else { throw new Error('No se pudo obtener URL pública de imagen.'); }
+        } else { throw new Error('No se recibió info de subida de Supabase para imagen.'); }
       }
     } catch (error: any) {
       console.error('Error en selectAndSendImage:', error);
@@ -357,6 +339,7 @@ export class ConversationPage implements OnInit, OnDestroy {
     }
   }
 
+  // CUERPO CORRECTO DE dataUrlToBlob
   private async dataUrlToBlob(dataUrl: string): Promise<Blob> {
     const response = await fetch(dataUrl);
     const blob = await response.blob();
@@ -365,15 +348,11 @@ export class ConversationPage implements OnInit, OnDestroy {
 
   async sendMediaMessage(fileUrl: string, type: 'image' | 'audio' | 'video' | 'file', originalFileName?: string) {
     if (!this.chatId || !this.currentUserId || !this.otherUserId) {
-      this.showToast('Error al enviar: datos de chat incompletos.');
-      return;
+      this.showToast('Error al enviar: datos de chat incompletos.'); return;
     }
     const messageData = {
-      senderId: this.currentUserId,
-      receiverId: this.otherUserId,
-      type: type,
-      fileUrl: fileUrl,
-      fileName: originalFileName || `${type}_${new Date().getTime()}`,
+      senderId: this.currentUserId, receiverId: this.otherUserId, type: type,
+      fileUrl: fileUrl, fileName: originalFileName || `${type}_${new Date().getTime()}`,
       timestamp: serverTimestamp(),
     };
     try {
@@ -385,12 +364,9 @@ export class ConversationPage implements OnInit, OnDestroy {
       if (type === 'video') lastMessageTextPreview = '📹 Video';
       if (type === 'file' && originalFileName) lastMessageTextPreview = `📄 ${originalFileName}`;
       else if (type === 'file') lastMessageTextPreview = '📄 Archivo adjunto';
-
       await updateDoc(chatDocRef, {
-        lastMessageText: lastMessageTextPreview,
-        lastMessageTimestamp: serverTimestamp(),
-        lastMessageSenderId: this.currentUserId,
-        updatedAt: serverTimestamp(),
+        lastMessageText: lastMessageTextPreview, lastMessageTimestamp: serverTimestamp(),
+        lastMessageSenderId: this.currentUserId, updatedAt: serverTimestamp(),
       });
       this.scrollToBottom();
       this.showToast(type === 'image' ? 'Imagen enviada.' : `${type.charAt(0).toUpperCase() + type.slice(1)} enviado.`);
@@ -404,12 +380,178 @@ export class ConversationPage implements OnInit, OnDestroy {
     if (imageUrl) {
       console.log('Abriendo imagen (simulado):', imageUrl);
       this.showToast('Visualizador de imagen no implementado.');
-      // Considerar usar un Modal de Ionic para mostrar la imagen aquí
     }
   }
-  // --- === FIN DE NUEVAS FUNCIONES PARA IMÁGENES === ---
+  
+  async toggleRecording() {
+    if (!this.platform.is('capacitor')) {
+      this.showToast('Grabación de audio solo en app móvil.'); return;
+    }
+    if (!this.canRecordAudio) {
+      const permResult = await VoiceRecorder.requestAudioRecordingPermission();
+      if (!permResult.value) {
+        const alert = await this.alertController.create({
+          header: 'Permiso Requerido',
+          message: 'Necesitamos permiso del micrófono. Habilítalo en los ajustes.',
+          buttons: ['OK']
+        });
+        await alert.present(); return;
+      }
+      this.canRecordAudio = true;
+    }
+    if (this.isRecording) {
+      this.showToast('Procesando audio...', 1500);
+      try {
+        const result: RecordingData = await VoiceRecorder.stopRecording();
+        this.isRecording = false; this.cdr.detectChanges();
+        if (result && result.value && result.value.recordDataBase64) {
+          this.showToast('Grabación finalizada. Subiendo...', 4000);
+          const base64Sound = result.value.recordDataBase64;
+          const mimeType = result.value.mimeType || 'audio/aac';
+          const fileExtension = mimeType.split('/').pop() || 'aac';
+          const audioBlob = await this.base64ToBlob(`data:${mimeType};base64,${base64Sound}`, mimeType); // CUERPO CORRECTO DE base64ToBlob
+          const fileName = `chat_media/${this.chatId}/audio_${new Date().getTime()}.${fileExtension}`;
+          const { data: uploadData, error: uploadError } = await this.supabase.storage
+            .from(this.bucketName).upload(fileName, audioBlob, { contentType: mimeType, upsert: false });
+          if (uploadError) { console.error("Error Supabase audio:", uploadError); throw uploadError; }
+          if (uploadData && uploadData.path) {
+            const { data: urlData } = this.supabase.storage.from(this.bucketName).getPublicUrl(uploadData.path);
+            if (urlData && urlData.publicUrl) {
+              await this.sendMediaMessage(urlData.publicUrl, 'audio', `mensaje_voz.${fileExtension}`);
+            } else { throw new Error('No se pudo obtener URL pública del audio.'); }
+          } else { throw new Error('No se recibió info de subida de Supabase para el audio.');}
+        } else { this.showToast('No se pudo obtener la grabación.'); }
+      } catch (error) { 
+        console.error('Error deteniendo/procesando grabación:', error);
+        this.showToast('Error al procesar el audio.');
+        this.isRecording = false; this.cdr.detectChanges();
+      }
+    } else {
+      try {
+        await VoiceRecorder.startRecording();
+        this.isRecording = true; this.cdr.detectChanges();
+        this.showToast('Grabando...'); 
+      } catch (error) { 
+        console.error('Error iniciando grabación:', error);
+        const permStatus = await VoiceRecorder.hasAudioRecordingPermission(); 
+        if(!permStatus.value) {
+            this.showToast('Permiso de micrófono no concedido.');
+            this.canRecordAudio = false; 
+        } else {
+            this.showToast('No se pudo iniciar la grabación.');
+        }
+      }
+    }
+  }
+  
+  // CUERPO CORRECTO DE base64ToBlob (usada por la función de audio)
+  private async base64ToBlob(dataURI: string, contentType: string = ''): Promise<Blob> {
+    const base64WithoutPrefix = dataURI.startsWith('data:') ? dataURI.split(',')[1] : dataURI;
+    const byteString = atob(base64WithoutPrefix);
+    const ab = new ArrayBuffer(byteString.length);
+    const ia = new Uint8Array(ab);
+    for (let i = 0; i < byteString.length; i++) {
+      ia[i] = byteString.charCodeAt(i);
+    }
+    return new Blob([ab], { type: contentType });
+  }
 
-  scrollToBottom(duration: number = 300) { /* ... (sin cambios) ... */ }
-  async showToast(message: string) { /* ... (sin cambios) ... */ }
-  ngOnDestroy() { /* ... (sin cambios) ... */ }
+  // --- === NUEVAS FUNCIONES PARA CONTROLES DE AUDIO PERSONALIZADOS (REPRODUCCIÓN) === ---
+  getAudioElement(msgId?: string): HTMLAudioElement | undefined {
+    if (!msgId) return undefined;
+    const audioRef = this.audioPlayers.find(ref => ref.nativeElement.id === `audioPlayer_${msgId}`);
+    return audioRef?.nativeElement;
+  }
+
+  toggleAudioPlayback(msg: ChatMessage) {
+    const audioElement = this.getAudioElement(msg.id);
+    if (!audioElement) {
+      console.error('Elemento de audio no encontrado para el mensaje:', msg.id);
+      return;
+    }
+
+    if (audioElement.paused || audioElement.ended) {
+      this.audioPlayers.forEach(ref => {
+        const otherAudio = ref.nativeElement;
+        if (otherAudio !== audioElement && !otherAudio.paused) {
+          otherAudio.pause();
+          const otherMsgId = otherAudio.id.replace('audioPlayer_', '');
+          const otherMsg = this.messages.find(m => m.id === otherMsgId);
+          if (otherMsg) {
+            otherMsg.isPlayingAudio = false;
+          }
+        }
+      });
+      audioElement.play().catch(e => console.error("Error al reproducir audio:", e));
+      msg.isPlayingAudio = true;
+    } else {
+      audioElement.pause();
+      msg.isPlayingAudio = false;
+    }
+    this.cdr.detectChanges(); 
+  }
+
+  setAudioDuration(msg: ChatMessage, duration: number) {
+    if (msg && !isNaN(duration) && duration !== Infinity) {
+      msg.audioDuration = duration;
+      msg.durationFormatted = this.formatDuration(duration);
+      if (!msg.currentTimeFormatted || msg.currentTime === 0) {
+        msg.currentTimeFormatted = this.formatDuration(0);
+      }
+      this.cdr.detectChanges();
+    }
+  }
+
+  updateAudioProgress(msg: ChatMessage, currentTime: number, duration: number) {
+    if (msg && !isNaN(currentTime) && !isNaN(duration) && duration > 0) {
+      msg.currentTime = currentTime;
+      msg.currentTimeFormatted = this.formatDuration(currentTime);
+      this.cdr.detectChanges();
+    }
+  }
+  
+  onAudioPlaybackEnd(msg: ChatMessage) {
+    if (msg) {
+      msg.isPlayingAudio = false;
+      msg.currentTime = 0; 
+      msg.currentTimeFormatted = this.formatDuration(0);
+      this.cdr.detectChanges();
+    }
+    const audioElement = this.getAudioElement(msg.id);
+    if (audioElement) {
+      audioElement.currentTime = 0; 
+    }
+  }
+
+  formatDuration(seconds: number): string {
+    if (isNaN(seconds) || seconds === Infinity || seconds < 0) {
+      return '0:00';
+    }
+    const minutes: number = Math.floor(seconds / 60);
+    const remainingSeconds: number = Math.floor(seconds % 60);
+    const formattedSeconds: string = remainingSeconds < 10 ? `0${remainingSeconds}` : `${remainingSeconds}`;
+    return `${minutes}:${formattedSeconds}`;
+  }
+  // --- === FIN DE NUEVAS FUNCIONES PARA CONTROLES DE AUDIO (REPRODUCCIÓN) === ---
+
+
+  scrollToBottom(duration: number = 300) {
+    setTimeout(() => {
+      if (this.chatContent) {
+        this.chatContent.scrollToBottom(duration);
+      }
+    }, 100);
+  }
+
+  async showToast(message: string, duration: number = 3000) {
+    const toast = await this.toastController.create({
+      message, duration: duration, position: 'bottom'
+    });
+    toast.present();
+  }
+
+  ngOnDestroy() {
+    if (this.messagesUnsubscribe) this.messagesUnsubscribe();
+    if (this.chatDocUnsubscribe) this.chatDocUnsubscribe();
+  }
 }
