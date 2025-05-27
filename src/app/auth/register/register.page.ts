@@ -15,6 +15,7 @@ import { User } from 'src/app/core/models/user.model';
 @Component({
   selector: 'app-register',
   templateUrl: './register.page.html',
+  styleUrl: './register.page.scss',
   standalone: false
 })
 export class RegisterPage {

@@ -1,9 +1,6 @@
+// src/app/chat/conversation/conversation.page.scss
 
 
-// Fondo para el chat (opcional, puedes poner una imagen o dejarlo por defecto)
-.chat-content-background {
-  // --background: url('/assets/chat-wallpaper.png') no-repeat center center / cover;
-}
 
 .loading-container {
   display: flex;
@@ -12,117 +9,182 @@
   align-items: center;
   height: 100%;
   color: var(--ion-color-medium-shade);
+  ion-spinner {
+    margin-bottom: 8px;
+  }
 }
 
 .message-list {
   display: flex;
   flex-direction: column;
-  padding-bottom: 10px; // Espacio para que el último mensaje no quede debajo del input
 }
 
+// --- ESTILOS PARA LAS BURBUJAS DE MENSAJE ---
 .message-wrapper {
   display: flex;
-  margin-bottom: 8px;
+  margin-bottom: 10px; 
   width: 100%;
 
   .chat-bubble {
-    padding: 8px 12px;
-    // border-radius: 8px; // Movido a las clases específicas .message-sent y .message-received
-    max-width: 75%; // Las burbujas no ocupan todo el ancho
-    word-wrap: break-word; // Para que el texto largo se ajuste
-    box-shadow: 0 1px 1px rgba(0, 0, 0, 0.1);
+    padding: 10px 14px; 
+    border-radius: 12px; 
+    max-width: 80%;    
+    word-wrap: break-word;
+    box-shadow: 0 1px 2px rgba(0, 0, 0, 0.08); 
+    line-height: 1.4; 
 
-    .message-text p {
-      margin: 0;
-      padding: 0;
-      white-space: pre-wrap; // Conserva los saltos de línea en el mensaje
-    }
+    .message-text {
+      p { 
+        margin: 0;
+        padding: 0;
+        white-space: pre-wrap;
+        font-size: 0.95rem; 
+      }
+
+      img { 
+        display: block;
+        max-width: 100%;
+        min-width: 150px; 
+        max-height: 300px; 
+        border-radius: 8px; 
+        margin-top: 5px;
+        margin-bottom: 5px;
+        object-fit: cover; 
+        cursor: pointer;
+      }
+
+      .custom-audio-player {
+        display: flex;
+        align-items: center;
+        gap: 8px;
+        margin-top: 5px;
+
+        ion-button {
+          --padding-start: 0;
+          --padding-end: 0;
+          font-size: 2em; 
+          min-width: 36px; 
+          height: 36px;
+        }
+
+        .audio-details {
+          display: flex;
+          flex-direction: column;
+          font-size: 0.8em;
+          color: inherit;
+          flex-grow: 1; 
+          
+          .audio-filename {
+            font-weight: 500; 
+            white-space: nowrap;
+            overflow: hidden;
+            text-overflow: ellipsis; 
+            margin-bottom: 2px;
+          }
+          .audio-time-progress {
+            opacity: 0.9;
+          }
+        }
+        audio {
+          display: none;
+        }
+      }
+
+      .location-message {
+        padding: 8px 0 0 0; 
+        margin-top: 5px;
+        
+        p strong {
+          display: block;
+          margin-bottom: 6px;
+          font-size: 0.9em;
+          font-weight: 500;
+        }
+
+        ion-button {
+          --border-radius: 20px;
+          font-size: 0.85em;
+          height: auto;
+          --padding-top: 6px;
+          --padding-bottom: 6px;
+          text-transform: none;
+          margin-top: 4px; 
+          --box-shadow: none; 
+        }
+      }
+    } // Fin de .message-text
 
     .message-timestamp {
-      font-size: 0.7em;
+      font-size: 0.65rem; 
       text-align: right;
-      margin-top: 4px;
+      margin-top: 6px;
+      opacity: 0.7;
+      clear: both; 
+    }
+  } // Fin de .chat-bubble
+} // Fin de .message-wrapper
+
+.message-sent {
+  justify-content: flex-end;
+  .chat-bubble {
+    background-color: var(--ion-color-primary);
+    color: var(--ion-color-primary-contrast);
+    border-radius: 12px; 
+    margin-left: auto;
+    margin-right: 8px;
+    .message-timestamp {
+      color: var(--ion-color-primary-contrast);
       opacity: 0.8;
     }
   }
 }
 
-.message-sent { // Mensajes enviados por el usuario actual
-  justify-content: flex-end; // Alinea a la derecha
+.message-received {
+  justify-content: flex-start;
   .chat-bubble {
-    background-color: var(--ion-color-primary); // Color primario
-    color: var(--ion-color-primary-contrast);  // Color del texto para contraste
-    border-radius: 8px; // <-- AQUÍ EL CAMBIO PARA BURBUJAS MÁS CUADRADAS
-    margin-left: auto; // Empuja la burbuja a la derecha
-    margin-right: 5px;
-    .message-timestamp {
-      color: var(--ion-color-primary-contrast);
-      opacity: 0.7;
-    }
-  }
-}
-
-.message-received { // Mensajes recibidos de otro usuario
-  justify-content: flex-start; // Alinea a la izquierda
-  .chat-bubble {
-    background-color: var(--ion-color-light); // Un color más claro
+    background-color: var(--ion-color-light); 
     color: var(--ion-color-dark);
-    border-radius: 8px; // <-- AQUÍ EL CAMBIO PARA BURBUJAS MÁS CUADRADAS
-    margin-right: auto; // Empuja la burbuja a la izquierda
-    margin-left: 5px;
+    border-radius: 12px; 
+    margin-right: auto;
+    margin-left: 8px;
     .message-timestamp {
       color: var(--ion-color-medium-shade);
     }
   }
 }
 
-// Estilos para el footer y el input del mensaje
+// --- ESTILOS PARA EL FOOTER Y EL INPUT DE MENSAJE ---
 .chat-input-footer ion-toolbar {
-  --padding-start: 8px;
-  --padding-end: 8px;
+  --padding-start: 5px;
+  --padding-end: 5px;
   --padding-top: 5px;
   --padding-bottom: 5px;
-  // Para manejar el espacio de la barra de gestos en iOS/Android
   padding-bottom: calc(5px + var(--ion-safe-area-bottom, 0px));
+  --min-height: auto; 
 }
 
 .message-input-item {
   --padding-start: 0;
   --inner-padding-end: 0;
-  flex-grow: 1; // Para que el input ocupe el espacio disponible
+  --background: var(--ion-color-light); 
+  border-radius: 22px; 
+  margin-right: 5px; 
+  flex-grow: 1;
+
   ion-textarea {
-    border: 1px solid var(--ion-color-medium-tint);
-    border-radius: 20px; // El input puede seguir siendo redondeado
+    border: none; 
     padding-left: 12px !important;
     padding-right: 12px !important;
-    --padding-top: 8px !important;
-    --padding-bottom: 8px !important;
-    max-height: 100px; // Para que no crezca demasiado con autoGrow
+    --padding-top: 10px !important;
+    --padding-bottom: 10px !important;
+    max-height: 100px;
+    font-size: 0.95rem;
   }
 }
 
-.custom-audio-player {
-  display: flex;
-  align-items: center;
-  gap: 8px; // Espacio entre el botón y la info del audio
-
-  ion-button {
-    --padding-start: 0;
-    --padding-end: 0;
-    font-size: 1.8em; // Hace el ícono de play/pausa un poco más grande
-  }
-
-  .audio-details {
-    display: flex;
-    flex-direction: column;
-    font-size: 0.8em;
-    color: inherit; // Hereda el color de la burbuja (blanco o negro)
-    
-    .audio-filename {
-      // Estilos para el nombre del archivo si quieres
-    }
-    .audio-time-progress {
-      opacity: 0.8;
-    }
-  }
+.chat-input-footer ion-buttons[slot="start"] ion-button,
+.chat-input-footer ion-buttons[slot="end"] ion-button {
+  --padding-start: 6px; 
+  --padding-end: 6px;
+  font-size: 1.5rem; 
 }

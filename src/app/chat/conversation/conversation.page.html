@@ -32,8 +32,8 @@
           
           <div *ngIf="msg.type === 'audio' && msg.fileUrl" class="custom-audio-player">
             <ion-button (click)="toggleAudioPlayback(msg)" fill="clear" size="default">
-              <ion-icon [name]="msg.isPlayingAudio ? 'pause-circle-outline' : 'play-circle-outline'" slot="icon-only" style="font-size: 28px;"></ion-icon>
-            </ion-button>
+              <ion-icon name="play-circle-outline" slot="icon-only" style="font-size: 28px;"></ion-icon>
+              </ion-button>
             <audio #audioPlayer [id]="'audioPlayer_' + msg.id" [src]="msg.fileUrl" 
                    (loadedmetadata)="setAudioDuration(msg, audioPlayer.duration)"
                    (timeupdate)="updateAudioProgress(msg, audioPlayer.currentTime, audioPlayer.duration)"
@@ -46,6 +46,14 @@
                 <span class="total-time">{{ msg.durationFormatted || '0:00' }}</span>
               </div>
             </div>
+          </div>
+          
+          <div *ngIf="msg.type === 'location' && msg.location" class="location-message">
+            <p><strong>Ubicación Compartida:</strong></p>
+            <ion-button fill="outline" size="small" [href]="getMapLink(msg.location.latitude, msg.location.longitude)" target="_blank" rel="noopener noreferrer" style="margin-top: 5px;">
+              <ion-icon name="map-outline" slot="start"></ion-icon>
+              Ver en Mapa
+            </ion-button>
           </div>
         </div>
         <div class="message-timestamp">
@@ -61,6 +69,9 @@
     <ion-buttons slot="start">
       <ion-button (click)="selectAndSendImage()" fill="clear" color="medium" [disabled]="isRecording">
         <ion-icon slot="icon-only" name="images-outline" aria-label="Enviar imagen"></ion-icon>
+      </ion-button>
+      <ion-button (click)="shareCurrentLocation()" fill="clear" color="medium" [disabled]="isRecording">
+        <ion-icon slot="icon-only" name="location-outline" aria-label="Compartir ubicación"></ion-icon>
       </ion-button>
     </ion-buttons>
     <ion-item lines="none" class="message-input-item">
