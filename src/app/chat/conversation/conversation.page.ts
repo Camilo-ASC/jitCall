@@ -29,6 +29,7 @@ import { createClient, SupabaseClient } from '@supabase/supabase-js';
 // Capacitor Plugins
 import { Camera, CameraResultType, CameraSource, Photo } from '@capacitor/camera';
 import { VoiceRecorder, RecordingData, GenericResponse } from 'capacitor-voice-recorder';
+import { Geolocation, Position } from '@capacitor/geolocation';
 
 // Modelo User
 import { User } from 'src/app/core/models/user.model'; 
@@ -52,7 +53,6 @@ interface MessageDocumentData {
   timestamp: Timestamp;
 }
 
-// ChatMessage actualizada para incluir propiedades de reproducción de audio
 export interface ChatMessage {
   id?: string;
   senderId: string;
@@ -339,37 +339,53 @@ export class ConversationPage implements OnInit, OnDestroy {
     }
   }
 
-  // CUERPO CORRECTO DE dataUrlToBlob
   private async dataUrlToBlob(dataUrl: string): Promise<Blob> {
     const response = await fetch(dataUrl);
     const blob = await response.blob();
     return blob;
   }
 
-  async sendMediaMessage(fileUrl: string, type: 'image' | 'audio' | 'video' | 'file', originalFileName?: string) {
+  async sendMediaMessage(
+    fileUrlOrLocation: string | { latitude: number, longitude: number }, 
+    type: 'image' | 'audio' | 'video' | 'file' | 'location', 
+    originalFileName?: string
+  ) {
     if (!this.chatId || !this.currentUserId || !this.otherUserId) {
       this.showToast('Error al enviar: datos de chat incompletos.'); return;
     }
-    const messageData = {
-      senderId: this.currentUserId, receiverId: this.otherUserId, type: type,
-      fileUrl: fileUrl, fileName: originalFileName || `${type}_${new Date().getTime()}`,
-      timestamp: serverTimestamp(),
+    const messageData: any = { 
+      senderId: this.currentUserId, receiverId: this.otherUserId,
+      type: type, timestamp: serverTimestamp(),
     };
-    try {
-      const messagesRef = collection(this.db, `chats/${this.chatId}/messages`);
-      await addDoc(messagesRef, messageData);
-      const chatDocRef = doc(this.db, 'chats', this.chatId);
-      let lastMessageTextPreview = '📷 Imagen';
+    let lastMessageTextPreview = '';
+    if (type === 'location' && typeof fileUrlOrLocation !== 'string') {
+      messageData.location = fileUrlOrLocation; 
+      lastMessageTextPreview = '📍 Ubicación Compartida';
+    } else if (typeof fileUrlOrLocation === 'string') {
+      messageData.fileUrl = fileUrlOrLocation;
+      messageData.fileName = originalFileName || `${type}_${new Date().getTime()}`;
+      if (type === 'image') lastMessageTextPreview = '📷 Imagen';
       if (type === 'audio') lastMessageTextPreview = '🎤 Mensaje de voz';
       if (type === 'video') lastMessageTextPreview = '📹 Video';
       if (type === 'file' && originalFileName) lastMessageTextPreview = `📄 ${originalFileName}`;
       else if (type === 'file') lastMessageTextPreview = '📄 Archivo adjunto';
+    } else {
+      this.showToast('Error interno al preparar mensaje.'); return;
+    }
+    try {
+      const messagesRef = collection(this.db, `chats/${this.chatId}/messages`);
+      await addDoc(messagesRef, messageData);
+      const chatDocRef = doc(this.db, 'chats', this.chatId);
       await updateDoc(chatDocRef, {
         lastMessageText: lastMessageTextPreview, lastMessageTimestamp: serverTimestamp(),
         lastMessageSenderId: this.currentUserId, updatedAt: serverTimestamp(),
       });
       this.scrollToBottom();
-      this.showToast(type === 'image' ? 'Imagen enviada.' : `${type.charAt(0).toUpperCase() + type.slice(1)} enviado.`);
+      if (type === 'location') {
+        this.showToast('Ubicación enviada.');
+      } else {
+        this.showToast(type === 'image' ? 'Imagen enviada.' : `${type.charAt(0).toUpperCase() + type.slice(1)} enviado.`);
+      }
     } catch (error) {
       console.error(`Error al enviar mensaje de ${type}:`, error);
       this.showToast(`No se pudo enviar el/la ${type}.`);
@@ -409,7 +425,7 @@ export class ConversationPage implements OnInit, OnDestroy {
           const base64Sound = result.value.recordDataBase64;
           const mimeType = result.value.mimeType || 'audio/aac';
           const fileExtension = mimeType.split('/').pop() || 'aac';
-          const audioBlob = await this.base64ToBlob(`data:${mimeType};base64,${base64Sound}`, mimeType); // CUERPO CORRECTO DE base64ToBlob
+          const audioBlob = await this.base64ToBlob(`data:${mimeType};base64,${base64Sound}`, mimeType);
           const fileName = `chat_media/${this.chatId}/audio_${new Date().getTime()}.${fileExtension}`;
           const { data: uploadData, error: uploadError } = await this.supabase.storage
             .from(this.bucketName).upload(fileName, audioBlob, { contentType: mimeType, upsert: false });
@@ -444,7 +460,6 @@ export class ConversationPage implements OnInit, OnDestroy {
     }
   }
   
-  // CUERPO CORRECTO DE base64ToBlob (usada por la función de audio)
   private async base64ToBlob(dataURI: string, contentType: string = ''): Promise<Blob> {
     const base64WithoutPrefix = dataURI.startsWith('data:') ? dataURI.split(',')[1] : dataURI;
     const byteString = atob(base64WithoutPrefix);
@@ -456,7 +471,7 @@ export class ConversationPage implements OnInit, OnDestroy {
     return new Blob([ab], { type: contentType });
   }
 
-  // --- === NUEVAS FUNCIONES PARA CONTROLES DE AUDIO PERSONALIZADOS (REPRODUCCIÓN) === ---
+  // --- === FUNCIONES PARA CONTROL DE AUDIO PERSONALIZADO (REPRODUCCIÓN) === ---
   getAudioElement(msgId?: string): HTMLAudioElement | undefined {
     if (!msgId) return undefined;
     const audioRef = this.audioPlayers.find(ref => ref.nativeElement.id === `audioPlayer_${msgId}`);
@@ -532,8 +547,59 @@ export class ConversationPage implements OnInit, OnDestroy {
     const formattedSeconds: string = remainingSeconds < 10 ? `0${remainingSeconds}` : `${remainingSeconds}`;
     return `${minutes}:${formattedSeconds}`;
   }
-  // --- === FIN DE NUEVAS FUNCIONES PARA CONTROLES DE AUDIO (REPRODUCCIÓN) === ---
+  // --- === FIN DE FUNCIONES PARA CONTROL DE AUDIO (REPRODUCCIÓN) === ---
 
+  // --- === FUNCIONES PARA COMPARTIR UBICACIÓN === ---
+  async shareCurrentLocation() {
+    if (!this.platform.is('capacitor')) {
+      this.showToast('Compartir ubicación solo disponible en la app móvil.');
+      return;
+    }
+
+    try {
+      let permissions = await Geolocation.checkPermissions();
+      if (permissions.location !== 'granted' && permissions.coarseLocation !== 'granted') {
+        permissions = await Geolocation.requestPermissions({ permissions: ['location', 'coarseLocation'] });
+      }
+
+      if (permissions.location === 'granted' || permissions.coarseLocation === 'granted') {
+        this.showToast('Obteniendo ubicación...');
+        const position: Position = await Geolocation.getCurrentPosition({
+          enableHighAccuracy: true, 
+          timeout: 15000 
+        });
+        
+        const locationData = {
+          latitude: position.coords.latitude,
+          longitude: position.coords.longitude
+        };
+        await this.sendMediaMessage(locationData, 'location');
+      } else {
+        this.showToast('Permiso de ubicación denegado.');
+      }
+    } catch (error: any) {
+      console.error('Error al obtener o compartir ubicación:', error);
+      if (error && error.message) {
+          if (error.message.toLowerCase().includes('location services are not enabled')) {
+            this.showToast('Servicios de ubicación desactivados. Por favor, actívalos.');
+          } else if (error.message.toLowerCase().includes('permission was denied')){
+            this.showToast('Permiso de ubicación denegado.');
+          } else {
+            this.showToast('No se pudo obtener la ubicación.');
+          }
+      } else {
+        this.showToast('No se pudo obtener la ubicación (error desconocido).');
+      }
+    }
+  }
+
+  public getMapLink(latitude?: number, longitude?: number): string { 
+    if (typeof latitude === 'number' && typeof longitude === 'number') {
+      return `https://maps.google.com/?q=${latitude},${longitude}&ll=${latitude},${longitude}&z=17`;
+    }
+    return '#'; 
+  }
+  // --- === FIN DE FUNCIONES PARA UBICACIÓN === ---
 
   scrollToBottom(duration: number = 300) {
     setTimeout(() => {
