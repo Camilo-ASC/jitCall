@@ -1,6 +1,6 @@
 # jitCall - Aplicación de Comunicación Móvil
 
-jitCall es una aplicación móvil desarrollada con Ionic Angular, enfocada en la comunicación entre usuarios a través de chat con funcionalidades multimedia.
+jitCall es una aplicación móvil desarrollada con Ionic Angular, enfocada en la comunicación entre usuarios a través de chat con funcionalidades multimedia. Aun se encuentra en proceso de mejora y trabajo.
 
 ## ✨ Funcionalidades Implementadas
 
